@@ -29,17 +29,17 @@ pub async fn post_position(
         .await
 }
 
-pub async fn post_order_fill(pool: &PgPool, order: Order) -> Result<PgQueryResult, sqlx::Error> {
-    sqlx::query!(
-        r#"INSERT INTO order (id, strategy_id, ticker_id, quantity)
-        VALUES (gen_random_uuid(), (SELECT id FROM strategies WHERE name = $1), (SELECT id FROM tickers WHERE symbol = $2), $3)
-        "#,
-        order.strategy,
-        order.ticker,
-        order.qty
-    ).execute(pool)
-        .await
-}
+// pub async fn post_order_fill(pool: &PgPool, order: Order) -> Result<PgQueryResult, sqlx::Error> {
+//     sqlx::query!(
+//         r#"INSERT INTO order (id, strategy_id, ticker_id, quantity)
+//         VALUES (gen_random_uuid(), (SELECT id FROM strategies WHERE name = $1), (SELECT id FROM tickers WHERE symbol = $2), $3)
+//         "#,
+//         order.strategy,
+//         order.ticker,
+//         order.qty
+//     ).execute(pool)
+//         .await
+// }
 
 pub async fn get_positions_by_strategy(
     pool: &PgPool,

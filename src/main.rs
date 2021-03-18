@@ -1,8 +1,9 @@
+use order_manager::run;
 use order_manager::Settings;
 use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
-async fn main() -> Result<(), sqlx::Error> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings = Settings::new().unwrap();
     println!("{:?}", settings);
     let _consumer = order_manager::kafka::consumer(&settings.kafka).unwrap();
@@ -11,10 +12,5 @@ async fn main() -> Result<(), sqlx::Error> {
         .max_connections(5)
         .connect(&settings.database.url)
         .await?;
-    println!(
-        "{:?}",
-        order_manager::db::get_all_positions(&pool).await.unwrap()
-    );
-
-    Ok(())
+    run().await
 }

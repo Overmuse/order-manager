@@ -1,7 +1,7 @@
 //use crate::db::get_ticker_position_by_strategy;
-use crate::db;
+//use crate::db;
 use crate::policy::Policy;
-use crate::Position;
+use crate::PositionIntent;
 use alpaca::common::Side;
 use alpaca::orders::OrderIntent;
 use alpaca::stream::{Event, OrderEvent};
@@ -43,15 +43,15 @@ impl OrderManager {
         }
     }
 
-    pub fn order_with_policy(&self, _position: Position) -> OrderIntent {
+    pub fn order_with_policy(&self, _position: PositionIntent) -> OrderIntent {
         todo!()
     }
 
     pub fn make_orders(
         &self,
-        position: Position,
-        current_position: Option<Position>,
-    ) -> Result<Vec<OrderIntent>, Box<dyn std::error::Error>> {
+        position: PositionIntent,
+        current_position: Option<PositionIntent>,
+    ) -> Result<Vec<OrderIntent>, Box<dyn std::error::Error + Send>> {
         match current_position {
             Some(current_position) => {
                 let qty_diff = position.qty - current_position.qty;
@@ -117,12 +117,14 @@ impl OrderManager {
 #[cfg(test)]
 mod test {
     use super::*;
+    use chrono::prelude::*;
 
     #[test]
     fn no_current_position() {
         let om = OrderManager::new();
-        let position = Position {
+        let position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
         };
@@ -135,13 +137,15 @@ mod test {
     #[test]
     fn accumulation() {
         let om = OrderManager::new();
-        let current_position = Position {
+        let current_position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 5,
         };
-        let position = Position {
+        let position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
         };
@@ -154,13 +158,15 @@ mod test {
     #[test]
     fn decumulation() {
         let om = OrderManager::new();
-        let current_position = Position {
+        let current_position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 15,
         };
-        let position = Position {
+        let position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
         };
@@ -173,13 +179,15 @@ mod test {
     #[test]
     fn no_change() {
         let om = OrderManager::new();
-        let current_position = Position {
+        let current_position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
         };
-        let position = Position {
+        let position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
         };
@@ -190,13 +198,15 @@ mod test {
     #[test]
     fn long_to_short() {
         let om = OrderManager::new();
-        let current_position = Position {
+        let current_position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
         };
-        let position = Position {
+        let position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: -15,
         };
@@ -212,13 +222,15 @@ mod test {
     #[test]
     fn short_to_long() {
         let om = OrderManager::new();
-        let current_position = Position {
+        let current_position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: -10,
         };
-        let position = Position {
+        let position = PositionIntent {
             strategy: "A".into(),
+            timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 15,
         };

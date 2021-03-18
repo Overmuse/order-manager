@@ -940,11 +940,13 @@ name = "order-manager"
 version = "0.1.0"
 dependencies = [
  "alpaca",
+ "chrono",
  "config",
  "dotenv",
  "futures",
  "rdkafka",
  "serde 1.0.124",
+ "serde_json",
  "sqlx",
  "tokio",
 ]

@@ -8,10 +8,12 @@ edition = "2018"
 
 [dependencies]
 alpaca = {version = "0.3", git = "ssh://git@github.com/Overmuse/alpaca.git", default-features = false, features = ["rest", "ws"]}
+chrono = "0.4.19"
 config = "0.10.1"
 dotenv = "0.15"
 futures = "0.3.13"
 rdkafka = {version = "0.25.0", features = ["ssl-vendored"]}
 serde = "1.0.124"
+serde_json = "1.0.64"
 sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "uuid"]}
 tokio = {version = "1.2", features = ["macros", "rt-multi-thread"]}
