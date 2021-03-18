@@ -1,0 +1,17 @@
+[package]
+name = "order-manager"
+version = "0.1.0"
+authors = ["Sebastian Rollen <seb@overmu.se>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+alpaca = {version = "0.3", git = "ssh://git@github.com/Overmuse/alpaca.git", default-features = false, features = ["rest", "ws"]}
+config = "0.10.1"
+dotenv = "0.15"
+futures = "0.3.13"
+rdkafka = {version = "0.25.0", features = ["ssl-vendored"]}
+serde = "1.0.124"
+sqlx = {version = "0.5", features = ["runtime-tokio-rustls", "postgres", "uuid"]}
+tokio = {version = "1.2", features = ["macros", "rt-multi-thread"]}
