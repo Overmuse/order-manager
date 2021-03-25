@@ -1,5 +1,6 @@
 //use crate::db::get_ticker_position_by_strategy;
 //use crate::db;
+use crate::order::Db;
 use crate::policy::Policy;
 use crate::PositionIntent;
 use alpaca::common::Side;
@@ -9,38 +10,31 @@ use sqlx::postgres::PgPool;
 
 pub struct OrderManager {
     pub policy: Policy,
-    _pool: Option<PgPool>,
+    pool: PgPool,
 }
 
 impl OrderManager {
-    pub fn new() -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self {
             policy: Policy::default(),
-            _pool: None,
+            pool,
         }
     }
 
-    pub fn register_order(&mut self, msg: OrderEvent) {
-        match msg.event {
-            Event::Canceled { timestamp } => todo!(),
-            Event::Expired { timestamp } => todo!(),
-            Event::Fill {
-                timestamp,
-                price,
-                qty,
-            } => todo!(),
-            //Event::New => db::post_order_fill(&self.pool, msg.order),
-            Event::OrderCancelRejected => todo!(),
-            Event::OrderReplaceRejected => todo!(),
-            Event::PartialFill {
-                timestamp,
-                price,
-                qty,
-            } => todo!(),
-            Event::Rejected { timestamp } => todo!(),
-            Event::Replaced { timestamp } => todo!(),
-            _ => todo!(),
-        }
+    pub async fn register_order(&self, msg: OrderEvent) -> Result<(), Box<dyn std::error::Error>> {
+        let res = match msg.event {
+            Event::Canceled { .. } => (),
+            Event::Expired { .. } => (),
+            Event::Fill { .. } => msg.order.save().execute(&self.pool).await.map(|_| ())?,
+            Event::New => (),
+            Event::OrderCancelRejected => (),
+            Event::OrderReplaceRejected => (),
+            Event::PartialFill { .. } => msg.order.save().execute(&self.pool).await.map(|_| ())?,
+            Event::Rejected { .. } => (),
+            Event::Replaced { .. } => (),
+            _ => (),
+        };
+        Ok(res)
     }
 
     pub fn order_with_policy(&self, _position: PositionIntent) -> OrderIntent {

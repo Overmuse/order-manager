@@ -18,12 +18,28 @@ SET default_table_access_method = heap;
 --
 
 CREATE TABLE public.orders (
-    id text NOT NULL,
-    strategy_id uuid NOT NULL,
-    ticker_id uuid NOT NULL,
-    quantity integer NOT NULL,
-    filled_quantity integer NOT NULL,
-    filled_avg_price double precision
+    id uuid NOT NULL,
+    client_order_id text,
+    created_at timestamp without time zone NOT NULL,
+    filled_at timestamp without time zone,
+    expired_at timestamp without time zone,
+    canceled_at timestamp without time zone,
+    failed_at timestamp without time zone,
+    replaced_at timestamp without time zone,
+    replaced_by uuid,
+    replaces uuid,
+    asset_id uuid,
+    symbol text NOT NULL,
+    qty integer NOT NULL,
+    filled_qty integer NOT NULL,
+    order_type text NOT NULL,
+    limit_price double precision,
+    stop_price double precision,
+    side text NOT NULL,
+    time_in_force text NOT NULL,
+    filled_avg_price double precision,
+    status text NOT NULL,
+    extended_hours boolean NOT NULL
 );
 
 
@@ -34,6 +50,7 @@ CREATE TABLE public.orders (
 CREATE TABLE public.positions (
     id uuid NOT NULL,
     strategy_id uuid NOT NULL,
+    "timestamp" timestamp without time zone NOT NULL,
     ticker_id uuid NOT NULL,
     quantity integer NOT NULL
 );
