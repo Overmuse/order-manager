@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-#alpaca = {git = "ssh://git@github.com/Overmuse/alpaca.git", tag = "v0.4.0", default-features = false, features = ["rest", "ws"]}
 alpaca = {git = "ssh://git@github.com/Overmuse/alpaca.git", tag = "v0.5.0", default-features = false, features = ["rest", "ws"]}
 anyhow = "1.0.39"
 async-trait = "0.1.48"
@@ -17,7 +16,6 @@ dotenv = "0.15"
 env_logger = "0.8.3"
 futures = "0.3.13"
 log = "0.4.14"
-rdkafka = {version = "0.26.0", features = ["ssl-vendored"]}
 serde = "1.0.124"
 serde_json = "1.0.64"
 serde_plain = "0.3.0"
@@ -26,3 +24,6 @@ stream-processor = {path = "../stream-processor" }
 tokio = {version = "1.2", features = ["macros", "rt-multi-thread"]}
 tracing = "0.1.25"
 tracing-subscriber = "0.2.17"
+
+[dev-dependencies]
+rdkafka = "0.26.0"

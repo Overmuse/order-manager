@@ -30,31 +30,6 @@ pub struct Kafka {
     pub security_protocol: SecurityProtocol,
 }
 
-impl Kafka {
-    pub fn config<'a>(
-        &self,
-        config: &'a mut rdkafka::ClientConfig,
-    ) -> &'a mut rdkafka::ClientConfig {
-        config.set("bootstrap.servers", &self.bootstrap_servers);
-        match &self.security_protocol {
-            SecurityProtocol::Plaintext => {
-                config.set("security.protocol", "PLAINTEXT");
-            }
-            SecurityProtocol::SaslSsl {
-                sasl_username,
-                sasl_password,
-            } => {
-                config
-                    .set("security.protocol", "SASL_SSL")
-                    .set("sasl.mechanism", "PLAIN")
-                    .set("sasl.username", sasl_username)
-                    .set("sasl.password", sasl_password);
-            }
-        }
-        config
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub database: Database,

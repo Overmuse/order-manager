@@ -8,7 +8,6 @@ use sqlx::postgres::PgPoolOptions;
 use stream_processor::{KafkaSettings, SecurityProtocol, StreamRunner};
 
 pub mod db;
-pub mod kafka;
 pub mod manager;
 pub mod order;
 pub mod policy;
@@ -43,7 +42,7 @@ pub async fn run(settings: Settings) -> Result<()> {
         settings.kafka.bootstrap_servers,
         settings.kafka.group_id,
         security_protocol,
-        vec!["intended-positions".into(), "overmuse-trades".into()],
+        vec!["position-intents".into(), "overmuse-trades".into()],
     );
     let order_manager = OrderManager::new().bind(pool);
     let runner = StreamRunner::new(order_manager, kafka_settings);

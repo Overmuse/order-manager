@@ -34,11 +34,9 @@ impl StreamProcessor for OrderManager {
     async fn handle_message(&self, msg: Self::Input) -> Result<Option<Vec<Self::Output>>> {
         match msg {
             Input::PositionIntent(position_intent) => {
-                let orders = self.make_orders(position_intent, None)?;
-                Ok(Some(orders))
+                self.handle_position_intent(position_intent).await
             }
             Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
-                tracing::info!("Saving to database: {:?}", order_event);
                 self.register_order(*order_event).await?;
                 Ok(None)
             }
@@ -67,39 +65,36 @@ impl OrderManager {
         self
     }
 
-    pub async fn register_order(&self, msg: OrderEvent) -> Result<()> {
+    fn pool(&self) -> Result<&PgPool> {
+        self.pool.as_ref().ok_or("Missing pool").map_err(Error::msg)
+    }
+
+    async fn handle_position_intent(
+        &self,
+        position_intent: PositionIntent,
+    ) -> Result<Option<Vec<OrderIntent>>> {
+        let pool = self.pool()?;
+        let current_position = crate::db::get_ticker_position_by_strategy(
+            pool,
+            &position_intent.strategy,
+            &position_intent.ticker,
+        )
+        .await?;
+        let orders = self.make_orders(position_intent, current_position)?;
+        Ok(Some(orders))
+    }
+
+    async fn register_order(&self, msg: OrderEvent) -> Result<()> {
+        let query = msg.order.save();
+        query.execute(self.pool()?).await.map(|_| ())?;
         let res = match msg.event {
             Event::Canceled { .. } => (),
             Event::Expired { .. } => (),
-            Event::Fill { .. } => {
-                let pool = self
-                    .pool
-                    .as_ref()
-                    .ok_or("Missing pool")
-                    .map_err(Error::msg)?;
-                let query = msg.order.save();
-                query.execute(pool).await.map(|_| ())?;
-            }
-            Event::New => {
-                let pool = self
-                    .pool
-                    .as_ref()
-                    .ok_or("Missing pool")
-                    .map_err(Error::msg)?;
-                let query = msg.order.save();
-                query.execute(pool).await.map(|_| ())?;
-            }
+            Event::Fill { .. } => {}
+            Event::New => {}
             Event::OrderCancelRejected => (),
             Event::OrderReplaceRejected => (),
-            Event::PartialFill { .. } => {
-                let pool = self
-                    .pool
-                    .as_ref()
-                    .ok_or("Missing pool")
-                    .map_err(Error::msg)?;
-                let query = msg.order.save();
-                query.execute(pool).await.map(|_| ())?;
-            }
+            Event::PartialFill { .. } => {}
             Event::Rejected { .. } => (),
             Event::Replaced { .. } => (),
             _ => (),
