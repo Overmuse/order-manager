@@ -5,31 +5,101 @@ use crate::policy::Policy;
 use crate::PositionIntent;
 use alpaca::common::Side;
 use alpaca::orders::OrderIntent;
-use alpaca::stream::{Event, OrderEvent};
+use alpaca::stream::{AlpacaMessage, Event, OrderEvent};
+use anyhow::{Error, Result};
+use serde::Deserialize;
 use sqlx::postgres::PgPool;
+use std::borrow::Cow;
+use stream_processor::StreamProcessor;
 
+#[derive(Default)]
 pub struct OrderManager {
     pub policy: Policy,
-    pool: PgPool,
+    pool: Option<PgPool>,
 }
 
-impl OrderManager {
-    pub fn new(pool: PgPool) -> Self {
-        Self {
-            policy: Policy::default(),
-            pool,
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum Input {
+    PositionIntent(PositionIntent),
+    AlpacaMessage(AlpacaMessage),
+}
+
+#[async_trait::async_trait]
+impl StreamProcessor for OrderManager {
+    type Input = Input;
+    type Output = OrderIntent;
+    type Error = Error;
+
+    async fn handle_message(&self, msg: Self::Input) -> Result<Option<Vec<Self::Output>>> {
+        match msg {
+            Input::PositionIntent(position_intent) => {
+                let orders = self.make_orders(position_intent, None)?;
+                Ok(Some(orders))
+            }
+            Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
+                tracing::info!("Saving to database: {:?}", order_event);
+                self.register_order(*order_event).await?;
+                Ok(None)
+            }
+            Input::AlpacaMessage(_) => unreachable!(),
         }
     }
 
-    pub async fn register_order(&self, msg: OrderEvent) -> Result<(), Box<dyn std::error::Error>> {
+    fn assign_topic(&self, _output: &Self::Output) -> Cow<str> {
+        Cow::Borrowed("order-intents")
+    }
+
+    fn assign_key(&self, output: &Self::Output) -> Cow<str> {
+        Cow::Owned(output.symbol.clone())
+    }
+}
+
+impl OrderManager {
+    pub fn new() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+
+    pub fn bind(mut self, pool: PgPool) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+    pub async fn register_order(&self, msg: OrderEvent) -> Result<()> {
         let res = match msg.event {
             Event::Canceled { .. } => (),
             Event::Expired { .. } => (),
-            Event::Fill { .. } => msg.order.save().execute(&self.pool).await.map(|_| ())?,
-            Event::New => (),
+            Event::Fill { .. } => {
+                let pool = self
+                    .pool
+                    .as_ref()
+                    .ok_or("Missing pool")
+                    .map_err(Error::msg)?;
+                let query = msg.order.save();
+                query.execute(pool).await.map(|_| ())?;
+            }
+            Event::New => {
+                let pool = self
+                    .pool
+                    .as_ref()
+                    .ok_or("Missing pool")
+                    .map_err(Error::msg)?;
+                let query = msg.order.save();
+                query.execute(pool).await.map(|_| ())?;
+            }
             Event::OrderCancelRejected => (),
             Event::OrderReplaceRejected => (),
-            Event::PartialFill { .. } => msg.order.save().execute(&self.pool).await.map(|_| ())?,
+            Event::PartialFill { .. } => {
+                let pool = self
+                    .pool
+                    .as_ref()
+                    .ok_or("Missing pool")
+                    .map_err(Error::msg)?;
+                let query = msg.order.save();
+                query.execute(pool).await.map(|_| ())?;
+            }
             Event::Rejected { .. } => (),
             Event::Replaced { .. } => (),
             _ => (),
@@ -45,7 +115,7 @@ impl OrderManager {
         &self,
         position: PositionIntent,
         current_position: Option<PositionIntent>,
-    ) -> Result<Vec<OrderIntent>, Box<dyn std::error::Error + Send>> {
+    ) -> Result<Vec<OrderIntent>> {
         match current_position {
             Some(current_position) => {
                 let qty_diff = position.qty - current_position.qty;

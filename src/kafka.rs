@@ -1,7 +1,8 @@
 use crate::settings::Kafka;
+use anyhow::Result;
 use rdkafka::{consumer::StreamConsumer, producer::FutureProducer, ClientConfig};
 
-pub fn consumer(settings: &Kafka) -> Result<StreamConsumer, Box<dyn std::error::Error>> {
+pub fn consumer(settings: &Kafka) -> Result<StreamConsumer> {
     let mut config = ClientConfig::new();
     let config = settings.config(&mut config);
     let consumer = config
@@ -11,7 +12,7 @@ pub fn consumer(settings: &Kafka) -> Result<StreamConsumer, Box<dyn std::error::
     Ok(consumer)
 }
 
-pub fn producer(settings: &Kafka) -> Result<FutureProducer, Box<dyn std::error::Error>> {
+pub fn producer(settings: &Kafka) -> Result<FutureProducer> {
     let mut config = ClientConfig::new();
     let config = settings.config(&mut config);
     let producer: FutureProducer = config
