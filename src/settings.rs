@@ -35,9 +35,7 @@ impl Kafka {
         &self,
         config: &'a mut rdkafka::ClientConfig,
     ) -> &'a mut rdkafka::ClientConfig {
-        config
-            .set("bootstrap.servers", &self.bootstrap_servers)
-            .set("group.id", &self.group_id);
+        config.set("bootstrap.servers", &self.bootstrap_servers);
         match &self.security_protocol {
             SecurityProtocol::Plaintext => {
                 config.set("security.protocol", "PLAINTEXT");

@@ -5,6 +5,7 @@ pub fn consumer(settings: &Kafka) -> Result<StreamConsumer, Box<dyn std::error::
     let mut config = ClientConfig::new();
     let config = settings.config(&mut config);
     let consumer = config
+        .set("group.id", &settings.group_id)
         .set("enable.ssl.certificate.verification", "false")
         .create()?;
     Ok(consumer)

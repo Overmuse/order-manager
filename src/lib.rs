@@ -1,6 +1,5 @@
 #![feature(type_alias_impl_trait)]
 use crate::manager::OrderManager;
-use crate::order::Db;
 use alpaca::stream::AlpacaMessage;
 use chrono::prelude::*;
 use futures::channel::mpsc::unbounded;
