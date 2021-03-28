@@ -1,3 +1,4 @@
+use mongodb::Client;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     client::DefaultClientContext,
@@ -9,14 +10,20 @@ use tracing::{debug, subscriber::set_global_default};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 pub async fn setup(
-    client_config: &ClientConfig,
+    mongo_client: &Client,
 ) -> (
     AdminClient<DefaultClientContext>,
     AdminOptions,
     StreamConsumer,
     FutureProducer,
 ) {
-    let admin: AdminClient<DefaultClientContext> = client_config.create().unwrap();
+    // Drop database, don't care if it fails
+    let _ = mongo_client.database("testdb").drop(None).await;
+    let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
+        .set("bootstrap.servers", "localhost:9094")
+        .set("security.protocol", "PLAINTEXT")
+        .create()
+        .unwrap();
     let admin_options = AdminOptions::new();
     let subscriber = FmtSubscriber::builder()
         .with_env_filter(EnvFilter::from_default_env())
@@ -35,9 +42,14 @@ pub async fn setup(
         .await
         .unwrap();
 
-    let producer: FutureProducer = client_config.create().unwrap();
-    let consumer: StreamConsumer = client_config
-        .clone()
+    let producer: FutureProducer = ClientConfig::new()
+        .set("bootstrap.servers", "localhost:9094")
+        .set("security.protocol", "PLAINTEXT")
+        .create()
+        .unwrap();
+    let consumer: StreamConsumer = ClientConfig::new()
+        .set("bootstrap.servers", "localhost:9094")
+        .set("security.protocol", "PLAINTEXT")
         .set("group.id", "test-consumer")
         .create()
         .unwrap();
