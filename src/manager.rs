@@ -1,3 +1,7 @@
+use crate::db::{
+    delete_order_intent_by_id, get_position_by_ticker, pending_order_intents_by_ticker,
+    pending_orders_by_ticker, save_order_intents, upsert_order, upsert_position,
+};
 use crate::policy::Policy;
 use crate::PositionIntent;
 use alpaca::common::{Order, Side};
@@ -84,29 +88,20 @@ impl OrderManager {
         position_intent: PositionIntent,
     ) -> Result<Option<Vec<OrderIntent>>> {
         let db = self.db()?;
-        let position_collection: Collection<PositionIntent> =
-            db.collection_with_type("position-intents");
-        let orders_collection: Collection<OrderIntent> = db.collection_with_type("order-intents");
-        let current_position: Option<PositionIntent> = position_collection
-            .find_one(
-                doc! {
-                    "strategy": &position_intent.strategy,
-                    "ticker": &position_intent.ticker
-                },
-                None,
-            )
-            .await
-            .context("Failed to lookup current position")?;
-        let pending_orders = orders_collection
-            .find(
-                doc! {
-                    "symbol": &position_intent.ticker
-                },
-                None,
-            )
-            .await
-            .context("Failed to lookup pending orders")?;
-        let pending_qty = pending_orders
+        let pending_order_qty = pending_orders_by_ticker(db, &position_intent.ticker)
+            .await?
+            .map(|order| {
+                // TODO: Account for partially filled
+                let order = order.unwrap();
+                match order.side {
+                    Side::Buy => (order.qty as i32),
+                    Side::Sell => -(order.qty as i32),
+                }
+            })
+            .fold(0, |acc, x| async move { acc + x })
+            .await;
+        let pending_order_intent_qty = pending_order_intents_by_ticker(db, &position_intent.ticker)
+            .await?
             .map(|order| {
                 let order = order.unwrap();
                 match order.side {
@@ -116,67 +111,66 @@ impl OrderManager {
             })
             .fold(0, |acc, x| async move { acc + x })
             .await;
-        let current_qty = match current_position {
-            Some(position_intent) => position_intent.qty,
-            None => 0,
-        };
-        let orders = self
-            .make_orders(position_intent, current_qty + pending_qty)
+        let current_qty = get_position_by_ticker(db, &position_intent.ticker)
+            .await?
+            .map(|position| position.qty)
+            .unwrap_or(0);
+        tracing::debug!(
+            "Pending order qty: {}\nPending order intent qty: {}\nCurrent qty: {}",
+            pending_order_qty,
+            pending_order_intent_qty,
+            current_qty
+        );
+        let order_intents = self
+            .make_orders(
+                position_intent,
+                current_qty + pending_order_intent_qty + pending_order_qty,
+            )
             .context("Failed to create orders")?;
-        orders_collection
-            .insert_many(orders.clone(), None)
-            .await
-            .context("Failed to insert orders into database")?;
+        save_order_intents(db, order_intents.clone()).await?;
 
-        Ok(Some(orders))
+        Ok(Some(order_intents))
     }
 
     async fn register_order(&self, msg: OrderEvent) -> Result<()> {
         let db = self.db()?;
-        let order_collection: Collection<Order> = db.collection_with_type("orders");
-        order_collection
-            .find_one_and_update(
-                doc! {
-                    "client_order_id": msg.order.client_order_id.clone().expect("Every order should have a client_order_id")
-                },
-                doc! {
-                    "$set": {
-                        "updated_at": bson::to_bson(&msg.order.updated_at).context("Failed to serialize updated_at")?,
-                        "submitted_at": bson::to_bson(&msg.order.submitted_at).context("Failed to serialize submitted_at")?,
-                        "filled_at": bson::to_bson(&msg.order.filled_at).context("Failed to serialize filled_at")?,
-                        "expired_at": bson::to_bson(&msg.order.expired_at).context("Failed to serialize expired_at")?,
-                        "canceled_at": bson::to_bson(&msg.order.canceled_at).context("Failed to serialize canceled_at")?,
-                        "failed_at": bson::to_bson(&msg.order.failed_at).context("Failed to serialize failed_at")?,
-                        "replaced_at": bson::to_bson(&msg.order.replaced_at).context("Failed to serialize replaced_at")?,
-                        "replaced_by": bson::to_bson(&msg.order.replaced_by).context("Failed to serialize replaced_by")?,
-                        "replaces": bson::to_bson(&msg.order.replaces).context("Failed to serialize replaces")?,
-                        "filled_qty": bson::to_bson(&(msg.order.filled_qty as i32)).context("Failed to serialize filled_qty")?,
-                        "filled_avg_price": bson::to_bson(&msg.order.filled_avg_price).context("Failed to serialize filled_avg_price")?,
-                        "status": bson::to_bson(&msg.order.status).context("Failed to serialize status")?,
-                    }
-                },
-                mongodb::options::FindOneAndUpdateOptions::builder()
-                    .upsert(true)
-                    .build(),
-            )
-            .await
-            .context("Failed to update order")?;
+        upsert_order(db, msg.order.clone()).await?;
+        delete_order_intent_by_id(
+            db,
+            msg.order
+                .client_order_id
+                .as_ref()
+                .expect("Every order should have client_order_id"),
+        )
+        .await?;
+        match msg.event {
+            Event::Fill {
+                price,
+                position_qty,
+                ..
+            } => {
+                let position = crate::Position {
+                    ticker: msg.order.symbol,
+                    qty: position_qty as i32,
+                    avg_entry_price: price,
+                };
+                upsert_position(db, position).await?;
+            }
+            Event::PartialFill {
+                price,
+                position_qty,
+                ..
+            } => {
+                let position = crate::Position {
+                    ticker: msg.order.symbol,
+                    qty: position_qty as i32,
+                    avg_entry_price: price,
+                };
+                upsert_position(db, position).await?;
+            }
+            _ => (),
+        }
         Ok(())
-        //let query = msg.order.save();
-        //query.execute(self.pool()?).await.map(|_| ())?;
-        //let res = match msg.event {
-        //    Event::Canceled { .. } => (),
-        //    Event::Expired { .. } => (),
-        //    Event::Fill { .. } => {}
-        //    Event::New => {}
-        //    Event::OrderCancelRejected => (),
-        //    Event::OrderReplaceRejected => (),
-        //    Event::PartialFill { .. } => {}
-        //    Event::Rejected { .. } => (),
-        //    Event::Replaced { .. } => (),
-        //    _ => (),
-        //};
-        //Ok(res)
     }
 
     pub fn order_with_policy(&self, _position: PositionIntent) -> OrderIntent {
@@ -188,67 +182,59 @@ impl OrderManager {
         position: PositionIntent,
         current_qty: i32,
     ) -> Result<Vec<OrderIntent>> {
-        if current_qty != 0 {
-            let qty_diff = position.qty - current_qty;
-            if current_qty.signum() != position.qty.signum() {
-                // In this case, we are going from a net long (short) position to a net short
-                // (long) position. Alpaca doesn't allow such an order, so we need to split our
-                // order into two – one that bring us to net zero and one that establishes the
-                // desired position
-                let side = match position.qty {
-                    x if x < 0 => Side::Sell,
-                    x if x > 0 => Side::Buy,
-                    _ => {
-                        // Want a net zero position
-                        if current_qty > 0 {
-                            Side::Sell
-                        } else {
-                            Side::Buy
-                        }
-                    }
-                };
-                let first_order = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(current_qty.abs() as usize)
-                    .side(side.clone());
-                let second_order = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(position.qty.abs() as usize)
-                    .side(side);
-                Ok(vec![first_order, second_order])
-            } else {
-                if qty_diff == 0 {
-                    Ok(Vec::new())
-                } else if qty_diff > 0 {
-                    let oi = OrderIntent::new(&position.ticker)
-                        .client_order_id(Uuid::new_v4().to_string())
-                        .qty(qty_diff.abs() as usize)
-                        .side(Side::Buy);
-                    Ok(vec![oi])
-                } else {
-                    let oi = OrderIntent::new(&position.ticker)
-                        .client_order_id(Uuid::new_v4().to_string())
-                        .qty(qty_diff.abs() as usize)
-                        .side(Side::Sell);
-                    Ok(vec![oi])
-                }
-            }
-        } else {
-            if position.qty == 0 {
-                Ok(Vec::new())
-            } else if position.qty > 0 {
+        match (current_qty, position.qty) {
+            (c, n) if c == n => Ok(Vec::new()),
+            (c, n) if c == 0 && n > 0 => {
                 let oi = OrderIntent::new(&position.ticker)
                     .client_order_id(Uuid::new_v4().to_string())
                     .qty(position.qty.abs() as usize)
                     .side(Side::Buy);
                 Ok(vec![oi])
-            } else {
+            }
+            (c, n) if c == 0 && n < 0 => {
                 let oi = OrderIntent::new(&position.ticker)
                     .client_order_id(Uuid::new_v4().to_string())
                     .qty(position.qty.abs() as usize)
                     .side(Side::Sell);
                 Ok(vec![oi])
             }
+            (c, n) if c < 0 && n > 0 => {
+                let first_order = OrderIntent::new(&position.ticker)
+                    .client_order_id(Uuid::new_v4().to_string())
+                    .qty(c.abs() as usize)
+                    .side(Side::Buy);
+                let second_order = OrderIntent::new(&position.ticker)
+                    .client_order_id(Uuid::new_v4().to_string())
+                    .qty(n as usize)
+                    .side(Side::Buy);
+                Ok(vec![first_order, second_order])
+            }
+            (c, n) if c > 0 && n < 0 => {
+                let first_order = OrderIntent::new(&position.ticker)
+                    .client_order_id(Uuid::new_v4().to_string())
+                    .qty(c as usize)
+                    .side(Side::Sell);
+                let second_order = OrderIntent::new(&position.ticker)
+                    .client_order_id(Uuid::new_v4().to_string())
+                    .qty(n.abs() as usize)
+                    .side(Side::Sell);
+                Ok(vec![first_order, second_order])
+            }
+            (c, n) if n > c => {
+                let oi = OrderIntent::new(&position.ticker)
+                    .client_order_id(Uuid::new_v4().to_string())
+                    .qty((n - c).abs() as usize)
+                    .side(Side::Buy);
+                Ok(vec![oi])
+            }
+            (c, n) if n < c => {
+                let oi = OrderIntent::new(&position.ticker)
+                    .client_order_id(Uuid::new_v4().to_string())
+                    .qty((c - n).abs() as usize)
+                    .side(Side::Sell);
+                Ok(vec![oi])
+            }
+            (_, _) => unreachable!(),
         }
     }
 }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub use settings::Settings;
 use stream_processor::StreamRunner;
 
+mod db;
 pub mod manager;
 pub mod policy;
 pub mod settings;
@@ -16,6 +17,20 @@ pub struct PositionIntent {
     pub strategy: String,
     pub timestamp: DateTime<Utc>,
     pub ticker: String,
+    pub qty: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum Side {
+    Long,
+    Short,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Position {
+    pub ticker: String,
+    pub avg_entry_price: f64,
     pub qty: i32,
 }
 
