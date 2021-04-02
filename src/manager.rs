@@ -1,21 +1,31 @@
-//use crate::db::get_ticker_position_by_strategy;
-//use crate::db;
-use crate::order::Db;
-use crate::policy::Policy;
-use crate::PositionIntent;
-use alpaca::common::Side;
-use alpaca::orders::OrderIntent;
-use alpaca::stream::{AlpacaMessage, Event, OrderEvent};
-use anyhow::{Error, Result};
+use crate::{
+    db::{
+        order::{pending_orders_by_ticker, upsert_order},
+        order_intent::{
+            delete_order_intent_by_id, pending_order_intents_by_ticker, save_order_intents,
+        },
+        position::{get_position_by_ticker, upsert_position},
+    },
+    order_generator::make_orders,
+    PositionIntent,
+};
+use alpaca::{
+    common::Side,
+    orders::OrderIntent,
+    stream::{AlpacaMessage, Event, OrderEvent},
+};
+use anyhow::{Context, Error, Result};
+use bson::doc;
+use futures::StreamExt;
+use mongodb::Database;
 use serde::Deserialize;
-use sqlx::postgres::PgPool;
 use std::borrow::Cow;
 use stream_processor::StreamProcessor;
+use tracing::{debug, trace};
 
 #[derive(Default)]
 pub struct OrderManager {
-    pub policy: Policy,
-    pool: Option<PgPool>,
+    db: Option<Database>,
 }
 
 #[derive(Deserialize)]
@@ -31,13 +41,18 @@ impl StreamProcessor for OrderManager {
     type Output = OrderIntent;
     type Error = Error;
 
+    #[tracing::instrument(skip(self, msg))]
     async fn handle_message(&self, msg: Self::Input) -> Result<Option<Vec<Self::Output>>> {
         match msg {
             Input::PositionIntent(position_intent) => {
+                trace!("Received PositionIntent: {:?}", position_intent);
                 self.handle_position_intent(position_intent).await
             }
             Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
-                self.register_order(*order_event).await?;
+                trace!("Received OrderEvent: {:?}", order_event);
+                self.register_order(*order_event)
+                    .await
+                    .context("Failed to register order")?;
                 Ok(None)
             }
             Input::AlpacaMessage(_) => unreachable!(),
@@ -60,245 +75,103 @@ impl OrderManager {
         }
     }
 
-    pub fn bind(mut self, pool: PgPool) -> Self {
-        self.pool = Some(pool);
+    pub fn bind(mut self, db: Database) -> Self {
+        self.db = Some(db);
         self
     }
 
-    fn pool(&self) -> Result<&PgPool> {
-        self.pool.as_ref().ok_or("Missing pool").map_err(Error::msg)
+    fn db(&self) -> Result<&Database> {
+        self.db
+            .as_ref()
+            .ok_or("Missing db")
+            .map_err(Error::msg)
+            .context("Failed to lookup db")
     }
 
     async fn handle_position_intent(
         &self,
         position_intent: PositionIntent,
     ) -> Result<Option<Vec<OrderIntent>>> {
-        let pool = self.pool()?;
-        let current_position = crate::db::get_ticker_position_by_strategy(
-            pool,
-            &position_intent.strategy,
-            &position_intent.ticker,
-        )
-        .await?;
-        let orders = self.make_orders(position_intent, current_position)?;
-        Ok(Some(orders))
+        let db = self.db()?;
+        let pending_order_qty = pending_orders_by_ticker(db, &position_intent.ticker)
+            .await?
+            .map(|order| {
+                // TODO: Account for partially filled
+                let order = order.unwrap();
+                match order.side {
+                    Side::Buy => (order.qty as i32),
+                    Side::Sell => -(order.qty as i32),
+                }
+            })
+            .fold(0, |acc, x| async move { acc + x })
+            .await;
+        let pending_order_intent_qty = pending_order_intents_by_ticker(db, &position_intent.ticker)
+            .await?
+            .map(|order| {
+                let order = order.unwrap();
+                match order.side {
+                    Side::Buy => (order.qty as i32),
+                    Side::Sell => -(order.qty as i32),
+                }
+            })
+            .fold(0, |acc, x| async move { acc + x })
+            .await;
+        let current_qty = get_position_by_ticker(db, &position_intent.ticker)
+            .await?
+            .map(|position| position.qty)
+            .unwrap_or(0);
+        debug!(
+            "Pending order qty: {}\nPending order intent qty: {}\nCurrent qty: {}",
+            pending_order_qty, pending_order_intent_qty, current_qty
+        );
+        let order_intents = make_orders(
+            position_intent,
+            current_qty,
+            pending_order_intent_qty + pending_order_qty,
+        );
+        save_order_intents(db, order_intents.clone()).await?;
+
+        Ok(Some(order_intents))
     }
 
     async fn register_order(&self, msg: OrderEvent) -> Result<()> {
-        let query = msg.order.save();
-        query.execute(self.pool()?).await.map(|_| ())?;
-        let res = match msg.event {
-            Event::Canceled { .. } => (),
-            Event::Expired { .. } => (),
-            Event::Fill { .. } => {}
-            Event::New => {}
-            Event::OrderCancelRejected => (),
-            Event::OrderReplaceRejected => (),
-            Event::PartialFill { .. } => {}
-            Event::Rejected { .. } => (),
-            Event::Replaced { .. } => (),
+        let db = self.db()?;
+        upsert_order(db, msg.order.clone()).await?;
+        delete_order_intent_by_id(
+            db,
+            msg.order
+                .client_order_id
+                .as_ref()
+                .expect("Every order should have client_order_id"),
+        )
+        .await?;
+        match msg.event {
+            Event::Fill {
+                price,
+                position_qty,
+                ..
+            } => {
+                let position = crate::Position {
+                    ticker: msg.order.symbol,
+                    qty: position_qty as i32,
+                    avg_entry_price: price,
+                };
+                upsert_position(db, position).await?;
+            }
+            Event::PartialFill {
+                price,
+                position_qty,
+                ..
+            } => {
+                let position = crate::Position {
+                    ticker: msg.order.symbol,
+                    qty: position_qty as i32,
+                    avg_entry_price: price,
+                };
+                upsert_position(db, position).await?;
+            }
             _ => (),
-        };
-        Ok(res)
-    }
-
-    pub fn order_with_policy(&self, _position: PositionIntent) -> OrderIntent {
-        todo!()
-    }
-
-    pub fn make_orders(
-        &self,
-        position: PositionIntent,
-        current_position: Option<PositionIntent>,
-    ) -> Result<Vec<OrderIntent>> {
-        match current_position {
-            Some(current_position) => {
-                let qty_diff = position.qty - current_position.qty;
-                if current_position.qty.signum() != position.qty.signum() {
-                    // In this case, we are going from a net long (short) position to a net short
-                    // (long) position. Alpaca doesn't allow such an order, so we need to split our
-                    // order into two – one that bring us to net zero and one that establishes the
-                    // desired position
-                    let side = match position.qty {
-                        x if x < 0 => Side::Sell,
-                        x if x > 0 => Side::Buy,
-                        _ => {
-                            // Want a net zero position
-                            if current_position.qty > 0 {
-                                Side::Sell
-                            } else {
-                                Side::Buy
-                            }
-                        }
-                    };
-                    let first_order = OrderIntent::new(&position.ticker)
-                        .qty(current_position.qty.abs() as usize)
-                        .side(side.clone());
-                    let second_order = OrderIntent::new(&position.ticker)
-                        .qty(position.qty.abs() as usize)
-                        .side(side);
-                    Ok(vec![first_order, second_order])
-                } else {
-                    if qty_diff == 0 {
-                        Ok(Vec::new())
-                    } else if qty_diff > 0 {
-                        let oi = OrderIntent::new(&position.ticker)
-                            .qty(qty_diff.abs() as usize)
-                            .side(Side::Buy);
-                        Ok(vec![oi])
-                    } else {
-                        let oi = OrderIntent::new(&position.ticker)
-                            .qty(qty_diff.abs() as usize)
-                            .side(Side::Sell);
-                        Ok(vec![oi])
-                    }
-                }
-            }
-            None => {
-                if position.qty == 0 {
-                    Ok(Vec::new())
-                } else if position.qty > 0 {
-                    let oi = OrderIntent::new(&position.ticker)
-                        .qty(position.qty.abs() as usize)
-                        .side(Side::Buy);
-                    Ok(vec![oi])
-                } else {
-                    let oi = OrderIntent::new(&position.ticker)
-                        .qty(position.qty.abs() as usize)
-                        .side(Side::Sell);
-                    Ok(vec![oi])
-                }
-            }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use chrono::prelude::*;
-
-    #[test]
-    fn no_current_position() {
-        let om = OrderManager::new();
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, None).unwrap();
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Buy);
-    }
-
-    #[test]
-    fn accumulation() {
-        let om = OrderManager::new();
-        let current_position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 5,
-        };
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, Some(current_position)).unwrap();
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 5);
-        assert_eq!(oi[0].side, Side::Buy);
-    }
-
-    #[test]
-    fn decumulation() {
-        let om = OrderManager::new();
-        let current_position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 15,
-        };
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, Some(current_position)).unwrap();
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 5);
-        assert_eq!(oi[0].side, Side::Sell);
-    }
-
-    #[test]
-    fn no_change() {
-        let om = OrderManager::new();
-        let current_position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, Some(current_position)).unwrap();
-        assert_eq!(oi.len(), 0);
-    }
-
-    #[test]
-    fn long_to_short() {
-        let om = OrderManager::new();
-        let current_position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: -15,
-        };
-        let oi = om.make_orders(position, Some(current_position)).unwrap();
-        println!("{:?}", oi);
-        assert_eq!(oi.len(), 2);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Sell);
-        assert_eq!(oi[1].qty, 15);
-        assert_eq!(oi[1].side, Side::Sell);
-    }
-
-    #[test]
-    fn short_to_long() {
-        let om = OrderManager::new();
-        let current_position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: -10,
-        };
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 15,
-        };
-        let oi = om.make_orders(position, Some(current_position)).unwrap();
-        println!("{:?}", oi);
-        assert_eq!(oi.len(), 2);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Buy);
-        assert_eq!(oi[1].qty, 15);
-        assert_eq!(oi[1].side, Side::Buy);
+        Ok(())
     }
 }
