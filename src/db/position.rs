@@ -9,12 +9,7 @@ pub(crate) async fn delete_position_by_ticker(db: &Database, ticker: &str) -> Re
     trace!("Deleting position for ticker {}", ticker);
     let position_collection: Collection<Position> = db.collection_with_type("positions");
     position_collection
-        .find_one_and_delete(
-            doc! {
-                "ticker": ticker
-            },
-            None,
-        )
+        .find_one_and_delete(doc! {"ticker": ticker}, None)
         .await
         .context(format!("Failed to find and delete position for {}", ticker))?;
     Ok(())
@@ -38,12 +33,7 @@ pub(crate) async fn get_position_by_ticker(
     trace!("Fetching position for ticker {}", ticker);
     let position_collection: Collection<Position> = db.collection_with_type("positions");
     position_collection
-        .find_one(
-            doc! {
-                "ticker": ticker
-            },
-            None,
-        )
+        .find_one(doc! {"ticker": ticker}, None)
         .await
         .context("Failed to find get positions")
 }
@@ -57,17 +47,8 @@ pub(crate) async fn upsert_position(db: &Database, position: Position) -> Result
         let position_collection: Collection<Position> = db.collection_with_type("positions");
         position_collection
             .find_one_and_replace(
-                doc! {
-                    "ticker": &position.ticker
-                },
+                doc! {"ticker": &position.ticker},
                 position,
-                //doc! {
-                //    "$set": {
-                //        "avg_entry_price": bson::to_bson(&position.avg_entry_price).context("Failed to serialize avg_entry_price")?,
-                //        "qty": bson::to_bson(&position.qty).context("Failed to serialize qty")?,
-                //        "side": bson::to_bson(&position.side).context("Failed to serialize side")?,
-                //    }
-                //},
                 mongodb::options::FindOneAndReplaceOptions::builder()
                     .upsert(true)
                     .build(),

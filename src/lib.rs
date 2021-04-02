@@ -9,7 +9,7 @@ use stream_processor::StreamRunner;
 
 mod db;
 pub mod manager;
-pub mod policy;
+mod order_generator;
 pub mod settings;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

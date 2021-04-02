@@ -1,25 +1,30 @@
-use crate::db::{
-    delete_order_intent_by_id, get_position_by_ticker, pending_order_intents_by_ticker,
-    pending_orders_by_ticker, save_order_intents, upsert_order, upsert_position,
+use crate::{
+    db::{
+        order::{pending_orders_by_ticker, upsert_order},
+        order_intent::{
+            delete_order_intent_by_id, pending_order_intents_by_ticker, save_order_intents,
+        },
+        position::{get_position_by_ticker, upsert_position},
+    },
+    order_generator::make_orders,
+    PositionIntent,
 };
-use crate::policy::Policy;
-use crate::PositionIntent;
-use alpaca::common::{Order, Side};
-use alpaca::orders::OrderIntent;
-use alpaca::stream::{AlpacaMessage, Event, OrderEvent};
+use alpaca::{
+    common::Side,
+    orders::OrderIntent,
+    stream::{AlpacaMessage, Event, OrderEvent},
+};
 use anyhow::{Context, Error, Result};
 use bson::doc;
 use futures::StreamExt;
-use mongodb::{Collection, Database};
+use mongodb::Database;
 use serde::Deserialize;
 use std::borrow::Cow;
 use stream_processor::StreamProcessor;
-use tracing::{trace, Instrument};
-use uuid::Uuid;
+use tracing::{debug, trace};
 
 #[derive(Default)]
 pub struct OrderManager {
-    pub policy: Policy,
     db: Option<Database>,
 }
 
@@ -115,18 +120,15 @@ impl OrderManager {
             .await?
             .map(|position| position.qty)
             .unwrap_or(0);
-        tracing::debug!(
+        debug!(
             "Pending order qty: {}\nPending order intent qty: {}\nCurrent qty: {}",
-            pending_order_qty,
-            pending_order_intent_qty,
-            current_qty
+            pending_order_qty, pending_order_intent_qty, current_qty
         );
-        let order_intents = self
-            .make_orders(
-                position_intent,
-                current_qty + pending_order_intent_qty + pending_order_qty,
-            )
-            .context("Failed to create orders")?;
+        let order_intents = make_orders(
+            position_intent,
+            current_qty,
+            pending_order_intent_qty + pending_order_qty,
+        );
         save_order_intents(db, order_intents.clone()).await?;
 
         Ok(Some(order_intents))
@@ -171,170 +173,5 @@ impl OrderManager {
             _ => (),
         }
         Ok(())
-    }
-
-    pub fn order_with_policy(&self, _position: PositionIntent) -> OrderIntent {
-        todo!()
-    }
-
-    pub fn make_orders(
-        &self,
-        position: PositionIntent,
-        current_qty: i32,
-    ) -> Result<Vec<OrderIntent>> {
-        match (current_qty, position.qty) {
-            (c, n) if c == n => Ok(Vec::new()),
-            (c, n) if c == 0 && n > 0 => {
-                let oi = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(position.qty.abs() as usize)
-                    .side(Side::Buy);
-                Ok(vec![oi])
-            }
-            (c, n) if c == 0 && n < 0 => {
-                let oi = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(position.qty.abs() as usize)
-                    .side(Side::Sell);
-                Ok(vec![oi])
-            }
-            (c, n) if c < 0 && n > 0 => {
-                let first_order = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(c.abs() as usize)
-                    .side(Side::Buy);
-                let second_order = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(n as usize)
-                    .side(Side::Buy);
-                Ok(vec![first_order, second_order])
-            }
-            (c, n) if c > 0 && n < 0 => {
-                let first_order = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(c as usize)
-                    .side(Side::Sell);
-                let second_order = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty(n.abs() as usize)
-                    .side(Side::Sell);
-                Ok(vec![first_order, second_order])
-            }
-            (c, n) if n > c => {
-                let oi = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty((n - c).abs() as usize)
-                    .side(Side::Buy);
-                Ok(vec![oi])
-            }
-            (c, n) if n < c => {
-                let oi = OrderIntent::new(&position.ticker)
-                    .client_order_id(Uuid::new_v4().to_string())
-                    .qty((c - n).abs() as usize)
-                    .side(Side::Sell);
-                Ok(vec![oi])
-            }
-            (_, _) => unreachable!(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use chrono::prelude::*;
-
-    #[test]
-    fn no_current_position() {
-        let om = OrderManager::new();
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, 0).unwrap();
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Buy);
-    }
-
-    #[test]
-    fn accumulation() {
-        let om = OrderManager::new();
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, 5).unwrap();
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 5);
-        assert_eq!(oi[0].side, Side::Buy);
-    }
-
-    #[test]
-    fn decumulation() {
-        let om = OrderManager::new();
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, 15).unwrap();
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 5);
-        assert_eq!(oi[0].side, Side::Sell);
-    }
-
-    #[test]
-    fn no_change() {
-        let om = OrderManager::new();
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 10,
-        };
-        let oi = om.make_orders(position, 10).unwrap();
-        assert_eq!(oi.len(), 0);
-    }
-
-    #[test]
-    fn long_to_short() {
-        let om = OrderManager::new();
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: -15,
-        };
-        let oi = om.make_orders(position, 10).unwrap();
-        println!("{:?}", oi);
-        assert_eq!(oi.len(), 2);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Sell);
-        assert_eq!(oi[1].qty, 15);
-        assert_eq!(oi[1].side, Side::Sell);
-    }
-
-    #[test]
-    fn short_to_long() {
-        let om = OrderManager::new();
-        let position = PositionIntent {
-            strategy: "A".into(),
-            timestamp: Utc::now(),
-            ticker: "AAPL".into(),
-            qty: 15,
-        };
-        let oi = om.make_orders(position, -10).unwrap();
-        println!("{:?}", oi);
-        assert_eq!(oi.len(), 2);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Buy);
-        assert_eq!(oi[1].qty, 15);
-        assert_eq!(oi[1].side, Side::Buy);
     }
 }
