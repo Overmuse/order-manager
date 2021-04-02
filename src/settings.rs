@@ -1,6 +1,6 @@
 use config::{Config, ConfigError, Environment, File};
+use kafka_settings::KafkaSettings;
 use serde::Deserialize;
-use stream_processor::KafkaSettings;
 
 #[derive(Debug, Deserialize)]
 pub struct Database {
