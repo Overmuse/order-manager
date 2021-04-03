@@ -2,24 +2,6 @@ use crate::PositionIntent;
 use alpaca::{common::Side, orders::OrderIntent};
 use uuid::Uuid;
 
-enum Exposure {
-    Long(u32),
-    Short(u32),
-    Zero,
-}
-
-impl From<i32> for Exposure {
-    fn from(x: i32) -> Self {
-        if x == 0 {
-            Self::Zero
-        } else if x > 0 {
-            Self::Long(x as u32)
-        } else {
-            Self::Short(x as u32)
-        }
-    }
-}
-
 pub fn make_orders(position: PositionIntent, owned_qty: i32, pending_qty: i32) -> Vec<OrderIntent> {
     let desired_change = position.qty - owned_qty - pending_qty;
     let max_size = if owned_qty == 0 {
@@ -32,12 +14,11 @@ pub fn make_orders(position: PositionIntent, owned_qty: i32, pending_qty: i32) -
 
 fn make_order(ticker: &str, qty: i32) -> OrderIntent {
     let side = if qty > 0 { Side::Buy } else { Side::Sell };
-    let oi = OrderIntent::new(ticker)
+    OrderIntent::new(ticker)
         .client_order_id(Uuid::new_v4().to_string())
         .qty(qty.abs() as usize)
         .side(side)
-        .extended_hours(true);
-    oi
+        .extended_hours(true)
 }
 
 fn make_order_vec(
