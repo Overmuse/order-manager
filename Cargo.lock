@@ -746,8 +746,8 @@ dependencies = [
 
 [[package]]
 name = "kafka-settings"
-version = "0.1.0"
-source = "git+ssh://git@github.com/Overmuse/kafka-settings.git?tag=v0.1.0#670c27de25cc64e15402af26bb79b7a1cb335ba1"
+version = "0.2.1"
+source = "git+ssh://git@github.com/Overmuse/kafka-settings.git?tag=v0.2.1#cefbe8ce086715b9f6b892494b22c2b8f7114419"
 dependencies = [
  "rdkafka",
  "serde 1.0.125",
@@ -1799,8 +1799,8 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stream-processor"
-version = "0.1.0"
-source = "git+ssh://git@github.com/Overmuse/stream-processor?tag=v0.1.0#b3bc0705c91c4d30371325cf0869b40e38220f37"
+version = "0.2.0"
+source = "git+ssh://git@github.com/Overmuse/stream-processor?tag=v0.2.0#15bb611e87b1c89b646c8f2caa88c41c8226780e"
 dependencies = [
  "async-trait",
  "futures",
