@@ -13,13 +13,14 @@ async-trait = "0.1.48"
 bson = "1.2.0"
 chrono = "0.4.19"
 config = "0.10.1"
+dotenv = "0.15.0"
 futures = "0.3.13"
-kafka-settings = {git = "ssh://git@github.com/Overmuse/kafka-settings.git", tag = "v0.2.1" }
+kafka-settings = {git = "ssh://git@github.com/Overmuse/kafka-settings.git", tag = "v0.2.2" }
 log = "0.4.14"
 mongodb = "2.0.0-alpha"
 serde = "1.0.124"
 serde_json = "1.0.64"
-stream-processor = { git = "ssh://git@github.com/Overmuse/stream-processor", tag = "v0.2.0" }
+stream-processor = { git = "ssh://git@github.com/Overmuse/stream-processor", tag = "v0.2.1" }
 tokio = {version = "1.2", features = ["macros", "rt-multi-thread"]}
 tracing = "0.1.25"
 tracing-subscriber = "0.2.17"

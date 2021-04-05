@@ -306,6 +306,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -746,8 +752,8 @@ dependencies = [
 
 [[package]]
 name = "kafka-settings"
-version = "0.2.1"
-source = "git+ssh://git@github.com/Overmuse/kafka-settings.git?tag=v0.2.1#cefbe8ce086715b9f6b892494b22c2b8f7114419"
+version = "0.2.2"
+source = "git+ssh://git@github.com/Overmuse/kafka-settings.git?tag=v0.2.2#e5056ca211632476f2fb74ffe15bc915a9a878f9"
 dependencies = [
  "rdkafka",
  "serde 1.0.125",
@@ -808,9 +814,9 @@ checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 
 [[package]]
 name = "lock_api"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd96ffd135b2fd7b973ac026d28085defbe8983df057ced3eb4f2130b0831312"
+checksum = "5a3c91c24eae6777794bb1997ad98bbb87daf92890acab859f7eaa4320333176"
 dependencies = [
  "scopeguard",
 ]
@@ -1114,6 +1120,7 @@ dependencies = [
  "bson",
  "chrono",
  "config",
+ "dotenv",
  "futures",
  "kafka-settings",
  "log",
@@ -1799,8 +1806,8 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stream-processor"
-version = "0.2.0"
-source = "git+ssh://git@github.com/Overmuse/stream-processor?tag=v0.2.0#15bb611e87b1c89b646c8f2caa88c41c8226780e"
+version = "0.2.1"
+source = "git+ssh://git@github.com/Overmuse/stream-processor?tag=v0.2.1#ea661616152db286b550971afc7260c79b80bef6"
 dependencies = [
  "async-trait",
  "futures",
@@ -1919,9 +1926,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.1.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "317cca572a0e89c3ce0ca1f1bdc9369547fe318a683418e42ac8f59d14701023"
+checksum = "5b5220f05bb7de7f3f53c7c065e1199b3172696fe2db9f9c4d8ad9b4ee74c342"
 dependencies = [
  "tinyvec_macros",
 ]

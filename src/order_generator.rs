@@ -18,7 +18,6 @@ fn make_order(ticker: &str, qty: i32) -> OrderIntent {
         .client_order_id(Uuid::new_v4().to_string())
         .qty(qty.abs() as usize)
         .side(side)
-        .extended_hours(true)
 }
 
 fn make_order_vec(

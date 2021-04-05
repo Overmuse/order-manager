@@ -1,4 +1,3 @@
-#![feature(type_alias_impl_trait)]
 use crate::manager::OrderManager;
 use anyhow::{Context, Result};
 use chrono::prelude::*;
