@@ -6,6 +6,8 @@ use serde::Deserialize;
 pub struct Database {
     pub url: String,
     pub name: String,
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Debug, Deserialize)]
