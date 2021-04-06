@@ -1,4 +1,5 @@
 use crate::manager::OrderManager;
+use alpaca::rest::orders::OrderIntent;
 use anyhow::{Context, Result};
 use chrono::prelude::*;
 use mongodb::Client;
@@ -31,6 +32,12 @@ pub struct Position {
     pub ticker: String,
     pub avg_entry_price: f64,
     pub qty: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DependentOrder {
+    client_order_id: String,
+    order: OrderIntent,
 }
 
 pub async fn run(settings: Settings) -> Result<()> {

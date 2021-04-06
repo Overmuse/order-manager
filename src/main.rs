@@ -11,6 +11,6 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .finish();
     set_global_default(subscriber)?;
-    let settings = Settings::new().unwrap();
+    let settings = Settings::new()?;
     run(settings).await
 }
