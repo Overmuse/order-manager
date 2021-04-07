@@ -22,9 +22,8 @@ use std::borrow::Cow;
 use stream_processor::StreamProcessor;
 use tracing::{debug, trace};
 
-#[derive(Default)]
 pub struct OrderManager {
-    db: Option<Database>,
+    db: Database,
 }
 
 #[derive(Deserialize)]
@@ -73,31 +72,15 @@ impl StreamProcessor for OrderManager {
 }
 
 impl OrderManager {
-    pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    pub fn bind(mut self, db: Database) -> Self {
-        self.db = Some(db);
-        self
-    }
-
-    fn db(&self) -> Result<&Database> {
-        self.db
-            .as_ref()
-            .ok_or("Missing db")
-            .map_err(Error::msg)
-            .context("Failed to lookup db")
+    pub fn new(db: Database) -> Self {
+        Self { db }
     }
 
     async fn handle_position_intent(
         &self,
         position_intent: PositionIntent,
     ) -> Result<Option<OrderIntent>> {
-        let db = self.db()?;
-        let pending_order_qty = pending_orders_by_ticker(db, &position_intent.ticker)
+        let pending_order_qty = pending_orders_by_ticker(&self.db, &position_intent.ticker)
             .await?
             .map(|order| {
                 // TODO: Account for partially filled
@@ -109,18 +92,19 @@ impl OrderManager {
             })
             .fold(0, |acc, x| async move { acc + x })
             .await;
-        let pending_order_intent_qty = pending_order_intents_by_ticker(db, &position_intent.ticker)
-            .await?
-            .map(|order| {
-                let order = order.unwrap();
-                match order.side {
-                    Side::Buy => (order.qty as i32),
-                    Side::Sell => -(order.qty as i32),
-                }
-            })
-            .fold(0, |acc, x| async move { acc + x })
-            .await;
-        let current_qty = get_position_by_ticker(db, &position_intent.ticker)
+        let pending_order_intent_qty =
+            pending_order_intents_by_ticker(&self.db, &position_intent.ticker)
+                .await?
+                .map(|order| {
+                    let order = order.unwrap();
+                    match order.side {
+                        Side::Buy => (order.qty as i32),
+                        Side::Sell => -(order.qty as i32),
+                    }
+                })
+                .fold(0, |acc, x| async move { acc + x })
+                .await;
+        let current_qty = get_position_by_ticker(&self.db, &position_intent.ticker)
             .await?
             .map(|position| position.qty)
             .unwrap_or(0);
@@ -132,11 +116,11 @@ impl OrderManager {
         match make_orders(position_intent, current_qty) {
             (None, None) => Ok(None),
             (Some(sent), None) => {
-                save_order_intent(db, sent.clone()).await?;
+                save_order_intent(&self.db, sent.clone()).await?;
                 Ok(Some(sent))
             }
             (Some(sent), Some(saved)) => {
-                save_order_intent(db, sent.clone()).await?;
+                save_order_intent(&self.db, sent.clone()).await?;
                 let dependent_order = DependentOrder {
                     client_order_id: sent
                         .client_order_id
@@ -144,7 +128,7 @@ impl OrderManager {
                         .expect("Every order should have client_order_id"),
                     order: saved,
                 };
-                save_dependent_order(db, dependent_order).await?;
+                save_dependent_order(&self.db, dependent_order).await?;
                 Ok(Some(sent))
             }
             (None, Some(_)) => unreachable!(),
@@ -152,14 +136,13 @@ impl OrderManager {
     }
 
     async fn register_order(&self, msg: OrderEvent) -> Result<Option<OrderIntent>> {
-        let db = self.db()?;
         let client_order_id = msg
             .order
             .client_order_id
             .as_ref()
             .expect("Every order should have client_order_id");
-        upsert_order(db, msg.order.clone()).await?;
-        delete_order_intent_by_id(db, client_order_id).await?;
+        upsert_order(&self.db, msg.order.clone()).await?;
+        delete_order_intent_by_id(&self.db, client_order_id).await?;
         match msg.event {
             Event::Fill {
                 price,
@@ -171,13 +154,13 @@ impl OrderManager {
                     qty: position_qty as i32,
                     avg_entry_price: price,
                 };
-                upsert_position(db, position).await?;
+                upsert_position(&self.db, position).await?;
                 let dependent_order =
-                    get_dependent_order_by_client_order_id(db, client_order_id).await?;
+                    get_dependent_order_by_client_order_id(&self.db, client_order_id).await?;
                 if dependent_order.is_some() {
-                    delete_dependent_order_by_client_order_id(db, client_order_id).await?;
+                    delete_dependent_order_by_client_order_id(&self.db, client_order_id).await?;
                     let order_intent = dependent_order.expect("Guaranteed to exist").order;
-                    save_order_intent(db, order_intent.clone()).await?;
+                    save_order_intent(&self.db, order_intent.clone()).await?;
                     Ok(Some(order_intent))
                 } else {
                     Ok(None)
@@ -193,7 +176,7 @@ impl OrderManager {
                     qty: position_qty as i32,
                     avg_entry_price: price,
                 };
-                upsert_position(db, position).await?;
+                upsert_position(&self.db, position).await?;
                 Ok(None)
             }
             _ => Ok(None),

@@ -16,7 +16,6 @@ config = "0.10.1"
 dotenv = "0.15.0"
 futures = "0.3.13"
 kafka-settings = {git = "ssh://git@github.com/Overmuse/kafka-settings.git", tag = "v0.2.2" }
-log = "0.4.14"
 mongodb = "2.0.0-alpha"
 serde = "1.0.124"
 serde_json = "1.0.64"

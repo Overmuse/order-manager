@@ -122,9 +122,9 @@ dependencies = [
 
 [[package]]
 name = "bson"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2abd828df036867b89a07c5a4824df1168b42d74f41af7253f20e55a32e5ca4b"
+checksum = "4b8fa0e9a7fedd4c2753e0a85fa376ca2c0f6ba19e4e9f23a12a5b641c84a10a"
 dependencies = [
  "base64 0.12.3",
  "chrono",
@@ -780,9 +780,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.92"
+version = "0.2.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56d855069fafbb9b344c0f962150cd2c1187975cb1c22c1522c240d8c4986714"
+checksum = "9385f66bf6105b241aa65a61cb923ef20efc665cb9f9bb50ac2f0c4b7f378d41"
 
 [[package]]
 name = "libz-sys"
@@ -1123,7 +1123,6 @@ dependencies = [
  "dotenv",
  "futures",
  "kafka-settings",
- "log",
  "mongodb",
  "rdkafka",
  "serde 1.0.125",
@@ -1137,9 +1136,9 @@ dependencies = [
 
 [[package]]
 name = "os_info"
-version = "3.0.1"
+version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2127a5da3c69035537febc04cd07008bb643653303b213a49b036d944531207"
+checksum = "4181c9203e70e66f39def4240a7e33f74d1d95b42c08320f9ac298c580934ab2"
 dependencies = [
  "log",
  "winapi",
@@ -2196,9 +2195,9 @@ checksum = "879f6906492a7cd215bfa4cf595b600146ccfac0c79bcbd1f3000162af5e8b06"
 
 [[package]]
 name = "unicode-bidi"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49f2bd0c6468a8230e1db229cff8029217cf623c767ea5d60bfbd42729ea54d5"
+checksum = "eeb8be209bb1c96b7c177c7420d26e04eccacb0eeae6b980e35fcb74678107e0"
 dependencies = [
  "matches",
 ]
