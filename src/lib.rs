@@ -1,8 +1,10 @@
-#![feature(type_alias_impl_trait)]
 use crate::manager::OrderManager;
 use anyhow::{Context, Result};
 use chrono::prelude::*;
-use mongodb::Client;
+use mongodb::{
+    options::{ClientOptions, Credential, StreamAddress},
+    Client,
+};
 use serde::{Deserialize, Serialize};
 pub use settings::Settings;
 use stream_processor::StreamRunner;
@@ -35,9 +37,19 @@ pub struct Position {
 }
 
 pub async fn run(settings: Settings) -> Result<()> {
-    let client = Client::with_uri_str(&settings.database.url).await?;
+    let credentials = Credential::builder()
+        .username(Some(settings.database.username))
+        .password(Some(settings.database.password))
+        .build();
+    let address = StreamAddress::parse(&settings.database.url)?;
+    let database_options = ClientOptions::builder()
+        .hosts(vec![address])
+        .direct_connection(true)
+        .credential(credentials)
+        .build();
+    let client = Client::with_options(database_options)?;
     let database = client.database(&settings.database.name);
-    let order_manager = OrderManager::new().bind(database);
+    let order_manager = OrderManager::new(database);
     let runner = StreamRunner::new(order_manager, settings.kafka);
     runner
         .run()

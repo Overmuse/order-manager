@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-manager-cm
+data:
+  KAFKA__GROUP_ID: order-manager
+  KAFKA__INPUT_TOPICS: overmuse-trades,position-intents
+  DATABASE__URL: mongodb+srv://overmusecluster.ujvbp.mongodb.net?retryWrites=true&w=majority
+  DATABASE__NAME: ordermanagerdb
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-manager-deployment
+spec:
+  selector:
+    matchLabels:
+      app: order-manager
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: order-manager
+    spec:
+      containers:
+      - name: trader
+        image: 799439856592.dkr.ecr.us-east-1.amazonaws.com/order-manager:${IMAGE_TAG}
+        envFrom:
+        - secretRef:
+            name: kafka
+        - secretRef:
+            name: mongo
+        - configMapRef:
+            name: order-manager-cm
+        - configMapRef:
+            name: kafka-config-map
