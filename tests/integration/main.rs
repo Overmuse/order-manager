@@ -16,16 +16,14 @@ mod teardown;
 
 #[tokio::test]
 async fn main() -> Result<()> {
-    let mongo_client = Client::with_uri_str("mongodb://localhost:27017").await?;
+    let mongo_client = Client::with_uri_str("mongodb://mongo:password@localhost:27017/").await?;
     let (admin, admin_options, consumer, producer) = setup(&mongo_client).await;
     debug!("Subscribing to topics");
     consumer.subscribe(&[&"order-intents"]).unwrap();
 
     tokio::spawn(async {
         std::env::set_var("DATABASE__NAME", "testdb");
-        std::env::set_var("DATABASE__URL", "localhost:27017");
-        std::env::set_var("DATABASE__USERNAME", "mongo");
-        std::env::set_var("DATABASE__PASSWORD", "password");
+        std::env::set_var("DATABASE__URL", "mongodb://mongo:password@localhost:27017/");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
         std::env::set_var("KAFKA__GROUP_ID", "order-manager");
         std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents");

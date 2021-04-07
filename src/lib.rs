@@ -2,10 +2,7 @@ use crate::manager::OrderManager;
 use alpaca::rest::orders::OrderIntent;
 use anyhow::{Context, Result};
 use chrono::prelude::*;
-use mongodb::{
-    options::{ClientOptions, Credential, StreamAddress},
-    Client,
-};
+use mongodb::Client;
 use serde::{Deserialize, Serialize};
 pub use settings::Settings;
 use stream_processor::StreamRunner;
@@ -44,17 +41,7 @@ pub struct DependentOrder {
 }
 
 pub async fn run(settings: Settings) -> Result<()> {
-    let credentials = Credential::builder()
-        .username(Some(settings.database.username))
-        .password(Some(settings.database.password))
-        .build();
-    let address = StreamAddress::parse(&settings.database.url)?;
-    let database_options = ClientOptions::builder()
-        .hosts(vec![address])
-        .direct_connection(true)
-        .credential(credentials)
-        .build();
-    let client = Client::with_options(database_options)?;
+    let client = Client::with_uri_str(&settings.database.url).await?;
     let database = client.database(&settings.database.name);
     let order_manager = OrderManager::new(database);
     let runner = StreamRunner::new(order_manager, settings.kafka);
