@@ -23,13 +23,13 @@ spec:
         app: order-manager
     spec:
       containers:
-      - name: trader
+      - name: order-manager
         image: 799439856592.dkr.ecr.us-east-1.amazonaws.com/order-manager:${IMAGE_TAG}
         env: 
           - name: DATABASE__URL
             valueFrom:
               secretKeyRef:
-                name: monfo
+                name: mongo
                 key: MONGO__URL
         envFrom:
         - secretRef:
