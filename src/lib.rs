@@ -37,18 +37,19 @@ pub struct Position {
 }
 
 pub async fn run(settings: Settings) -> Result<()> {
+    let credentials = Credential::builder()
+        .username(Some(settings.database.username))
+        .password(Some(settings.database.password))
+        .build();
+    let address = StreamAddress::parse(&settings.database.url)?;
     let database_options = ClientOptions::builder()
-        .hosts(vec![StreamAddress::parse(&settings.database.url)?])
-        .credential(
-            Credential::builder()
-                .username(Some(settings.database.username))
-                .password(Some(settings.database.password))
-                .build(),
-        )
+        .hosts(vec![address])
+        .direct_connection(true)
+        .credential(credentials)
         .build();
     let client = Client::with_options(database_options)?;
     let database = client.database(&settings.database.name);
-    let order_manager = OrderManager::new().bind(database);
+    let order_manager = OrderManager::new(database);
     let runner = StreamRunner::new(order_manager, settings.kafka);
     runner
         .run()

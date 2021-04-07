@@ -22,9 +22,17 @@ async fn main() -> Result<()> {
     consumer.subscribe(&[&"order-intents"]).unwrap();
 
     tokio::spawn(async {
-        let settings = Settings::new().unwrap();
-        debug!("Running order manager");
-        run(settings).await
+        std::env::set_var("DATABASE__NAME", "testdb");
+        std::env::set_var("DATABASE__URL", "localhost:27017");
+        std::env::set_var("DATABASE__USERNAME", "mongo");
+        std::env::set_var("DATABASE__PASSWORD", "password");
+        std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
+        std::env::set_var("KAFKA__GROUP_ID", "order-manager");
+        std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents");
+        std::env::set_var("KAFKA__BOOTSTRAP_SERVERS", "localhost:9094");
+        std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
+        let settings = Settings::new();
+        run(settings.unwrap()).await
     });
 
     // TODO: Replace this sleep with a liveness check

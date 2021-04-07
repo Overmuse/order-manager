@@ -23,9 +23,8 @@ use std::borrow::Cow;
 use stream_processor::StreamProcessor;
 use tracing::{debug, trace};
 
-#[derive(Default)]
 pub struct OrderManager {
-    db: Option<Database>,
+    db: Database,
 }
 
 #[derive(Deserialize)]
@@ -69,31 +68,15 @@ impl StreamProcessor for OrderManager {
 }
 
 impl OrderManager {
-    pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    pub fn bind(mut self, db: Database) -> Self {
-        self.db = Some(db);
-        self
-    }
-
-    fn db(&self) -> Result<&Database> {
-        self.db
-            .as_ref()
-            .ok_or("Missing db")
-            .map_err(Error::msg)
-            .context("Failed to lookup db")
+    pub fn new(db: Database) -> Self {
+        Self { db }
     }
 
     async fn handle_position_intent(
         &self,
         position_intent: PositionIntent,
     ) -> Result<Option<Vec<OrderIntent>>> {
-        let db = self.db()?;
-        let pending_order_qty = pending_orders_by_ticker(db, &position_intent.ticker)
+        let pending_order_qty = pending_orders_by_ticker(&self.db, &position_intent.ticker)
             .await?
             .map(|order| {
                 // TODO: Account for partially filled
@@ -105,18 +88,19 @@ impl OrderManager {
             })
             .fold(0, |acc, x| async move { acc + x })
             .await;
-        let pending_order_intent_qty = pending_order_intents_by_ticker(db, &position_intent.ticker)
-            .await?
-            .map(|order| {
-                let order = order.unwrap();
-                match order.side {
-                    Side::Buy => (order.qty as i32),
-                    Side::Sell => -(order.qty as i32),
-                }
-            })
-            .fold(0, |acc, x| async move { acc + x })
-            .await;
-        let current_qty = get_position_by_ticker(db, &position_intent.ticker)
+        let pending_order_intent_qty =
+            pending_order_intents_by_ticker(&self.db, &position_intent.ticker)
+                .await?
+                .map(|order| {
+                    let order = order.unwrap();
+                    match order.side {
+                        Side::Buy => (order.qty as i32),
+                        Side::Sell => -(order.qty as i32),
+                    }
+                })
+                .fold(0, |acc, x| async move { acc + x })
+                .await;
+        let current_qty = get_position_by_ticker(&self.db, &position_intent.ticker)
             .await?
             .map(|position| position.qty)
             .unwrap_or(0);
@@ -129,16 +113,15 @@ impl OrderManager {
             current_qty,
             pending_order_intent_qty + pending_order_qty,
         );
-        save_order_intents(db, order_intents.clone()).await?;
+        save_order_intents(&self.db, order_intents.clone()).await?;
 
         Ok(Some(order_intents))
     }
 
     async fn register_order(&self, msg: OrderEvent) -> Result<()> {
-        let db = self.db()?;
-        upsert_order(db, msg.order.clone()).await?;
+        upsert_order(&self.db, msg.order.clone()).await?;
         delete_order_intent_by_id(
-            db,
+            &self.db,
             msg.order
                 .client_order_id
                 .as_ref()
@@ -156,7 +139,7 @@ impl OrderManager {
                     qty: position_qty as i32,
                     avg_entry_price: price,
                 };
-                upsert_position(db, position).await?;
+                upsert_position(&self.db, position).await?;
             }
             Event::PartialFill {
                 price,
@@ -168,7 +151,7 @@ impl OrderManager {
                     qty: position_qty as i32,
                     avg_entry_price: price,
                 };
-                upsert_position(db, position).await?;
+                upsert_position(&self.db, position).await?;
             }
             _ => (),
         }
