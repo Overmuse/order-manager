@@ -41,7 +41,9 @@ pub struct DependentOrder {
 }
 
 pub async fn run(settings: Settings) -> Result<()> {
-    let client = Client::with_uri_str(&settings.database.url).await?;
+    let client = Client::with_uri_str(&settings.database.url)
+        .await
+        .context("Failed to create mongo client")?;
     let database = client.database(&settings.database.name);
     let order_manager = OrderManager::new(database);
     let runner = StreamRunner::new(order_manager, settings.kafka);

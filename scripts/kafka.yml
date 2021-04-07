@@ -1,18 +1,26 @@
+version: "2.1"
+
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper
     ports:
-      - "2181:2181"
+    - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
       ZOOKEEPER_SYNC_LIMIT: 2
+    healthcheck:
+      test: echo stat | nc localhost 2181
+      interval: 10s
+      timeout: 10s
+      retries: 3
   kafka:
     image: confluentinc/cp-kafka
     ports:
-      - 9094:9094
+    - 9094:9094
     depends_on:
-      - zookeeper
+    - zookeeper
+
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: INTERNAL://kafka:9092,OUTSIDE://kafka:9094
