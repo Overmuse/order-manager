@@ -1,14 +1,13 @@
-use crate::{
-    db::{
-        order::{pending_orders_by_ticker, upsert_order},
-        order_intent::{
-            delete_order_intent_by_id, pending_order_intents_by_ticker, save_order_intents,
-        },
-        position::{get_position_by_ticker, upsert_position},
+use crate::db::{
+    dependent_order::{
+        delete_dependent_order_by_client_order_id, get_dependent_order_by_client_order_id,
+        save_dependent_order,
     },
-    order_generator::make_orders,
-    PositionIntent,
+    order::{pending_orders_by_ticker, upsert_order},
+    order_intent::{delete_order_intent_by_id, pending_order_intents_by_ticker, save_order_intent},
+    position::{get_position_by_ticker, upsert_position},
 };
+use crate::{order_generator::make_orders, DependentOrder, PositionIntent};
 use alpaca::{
     common::Side,
     orders::OrderIntent,
@@ -45,14 +44,19 @@ impl StreamProcessor for OrderManager {
         match msg {
             Input::PositionIntent(position_intent) => {
                 trace!("Received PositionIntent: {:?}", position_intent);
-                self.handle_position_intent(position_intent).await
+                let res = self
+                    .handle_position_intent(position_intent)
+                    .await
+                    .context("Failed to handle position intent")?;
+                Ok(res.map(|x| vec![x]))
             }
             Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
                 trace!("Received OrderEvent: {:?}", order_event);
-                self.register_order(*order_event)
+                let res = self
+                    .register_order(*order_event)
                     .await
                     .context("Failed to register order")?;
-                Ok(None)
+                Ok(res.map(|x| vec![x]))
             }
             Input::AlpacaMessage(_) => unreachable!(),
         }
@@ -75,7 +79,7 @@ impl OrderManager {
     async fn handle_position_intent(
         &self,
         position_intent: PositionIntent,
-    ) -> Result<Option<Vec<OrderIntent>>> {
+    ) -> Result<Option<OrderIntent>> {
         let pending_order_qty = pending_orders_by_ticker(&self.db, &position_intent.ticker)
             .await?
             .map(|order| {
@@ -108,26 +112,37 @@ impl OrderManager {
             "Pending order qty: {}\nPending order intent qty: {}\nCurrent qty: {}",
             pending_order_qty, pending_order_intent_qty, current_qty
         );
-        let order_intents = make_orders(
-            position_intent,
-            current_qty,
-            pending_order_intent_qty + pending_order_qty,
-        );
-        save_order_intents(&self.db, order_intents.clone()).await?;
-
-        Ok(Some(order_intents))
+        // TODO: Deal with pending quantities
+        match make_orders(position_intent, current_qty) {
+            (None, None) => Ok(None),
+            (Some(sent), None) => {
+                save_order_intent(&self.db, sent.clone()).await?;
+                Ok(Some(sent))
+            }
+            (Some(sent), Some(saved)) => {
+                save_order_intent(&self.db, sent.clone()).await?;
+                let dependent_order = DependentOrder {
+                    client_order_id: sent
+                        .client_order_id
+                        .clone()
+                        .expect("Every order should have client_order_id"),
+                    order: saved,
+                };
+                save_dependent_order(&self.db, dependent_order).await?;
+                Ok(Some(sent))
+            }
+            (None, Some(_)) => unreachable!(),
+        }
     }
 
-    async fn register_order(&self, msg: OrderEvent) -> Result<()> {
+    async fn register_order(&self, msg: OrderEvent) -> Result<Option<OrderIntent>> {
+        let client_order_id = msg
+            .order
+            .client_order_id
+            .as_ref()
+            .expect("Every order should have client_order_id");
         upsert_order(&self.db, msg.order.clone()).await?;
-        delete_order_intent_by_id(
-            &self.db,
-            msg.order
-                .client_order_id
-                .as_ref()
-                .expect("Every order should have client_order_id"),
-        )
-        .await?;
+        delete_order_intent_by_id(&self.db, client_order_id).await?;
         match msg.event {
             Event::Fill {
                 price,
@@ -140,6 +155,16 @@ impl OrderManager {
                     avg_entry_price: price,
                 };
                 upsert_position(&self.db, position).await?;
+                let dependent_order =
+                    get_dependent_order_by_client_order_id(&self.db, client_order_id).await?;
+                if dependent_order.is_some() {
+                    delete_dependent_order_by_client_order_id(&self.db, client_order_id).await?;
+                    let order_intent = dependent_order.expect("Guaranteed to exist").order;
+                    save_order_intent(&self.db, order_intent.clone()).await?;
+                    Ok(Some(order_intent))
+                } else {
+                    Ok(None)
+                }
             }
             Event::PartialFill {
                 price,
@@ -152,9 +177,9 @@ impl OrderManager {
                     avg_entry_price: price,
                 };
                 upsert_position(&self.db, position).await?;
+                Ok(None)
             }
-            _ => (),
+            _ => Ok(None),
         }
-        Ok(())
     }
 }

@@ -2,46 +2,36 @@ use crate::PositionIntent;
 use alpaca::{common::Side, orders::OrderIntent};
 use uuid::Uuid;
 
-pub fn make_orders(position: PositionIntent, owned_qty: i32, pending_qty: i32) -> Vec<OrderIntent> {
-    let desired_change = position.qty - owned_qty - pending_qty;
-    let max_size = if owned_qty == 0 {
-        None
+pub fn make_orders(
+    position: PositionIntent,
+    owned_qty: i32,
+) -> (Option<OrderIntent>, Option<OrderIntent>) {
+    //TODO: deal with pending qty
+    if position.qty == owned_qty {
+        // No trading needed
+        (None, None)
     } else {
-        Some(-owned_qty)
-    };
-    make_order_vec(&position.ticker, desired_change, max_size)
+        let signum_product = owned_qty.signum() * position.qty.signum();
+        if signum_product >= 0 {
+            // No restrictions on trading, just send the diff in qty
+            let qty = position.qty - owned_qty;
+            let trade = order_intent(&position.ticker, qty);
+            (Some(trade), None)
+        } else {
+            // Quantities have different signs
+            let sent = order_intent(&position.ticker, -owned_qty);
+            let saved = order_intent(&position.ticker, position.qty);
+            (Some(sent), Some(saved))
+        }
+    }
 }
 
-fn make_order(ticker: &str, qty: i32) -> OrderIntent {
+fn order_intent(ticker: &str, qty: i32) -> OrderIntent {
     let side = if qty > 0 { Side::Buy } else { Side::Sell };
     OrderIntent::new(ticker)
         .client_order_id(Uuid::new_v4().to_string())
         .qty(qty.abs() as usize)
         .side(side)
-        .extended_hours(true)
-}
-
-fn make_order_vec(
-    ticker: &str,
-    total_change: i32,
-    max_order_size: Option<i32>,
-) -> Vec<OrderIntent> {
-    if total_change == 0 {
-        return Vec::new();
-    }
-    if let Some(max_order_size) = max_order_size {
-        let num_orders = (total_change / max_order_size).max(0) as usize;
-        let mut order_vec: Vec<_> = (0..num_orders)
-            .map(|_| make_order(ticker, max_order_size))
-            .collect();
-        order_vec.push(make_order(
-            ticker,
-            total_change - max_order_size * num_orders as i32,
-        ));
-        order_vec
-    } else {
-        vec![make_order(ticker, total_change)]
-    }
 }
 
 #[cfg(test)]
@@ -57,10 +47,11 @@ mod test {
             ticker: "AAPL".into(),
             qty: 10,
         };
-        let oi = make_orders(position, 0, 0);
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Buy);
+        let (sent, saved) = make_orders(position, 0);
+        let sent = sent.unwrap();
+        assert_eq!(sent.qty, 10);
+        assert_eq!(sent.side, Side::Buy);
+        assert!(saved.is_none())
     }
 
     #[test]
@@ -71,10 +62,11 @@ mod test {
             ticker: "AAPL".into(),
             qty: 10,
         };
-        let oi = make_orders(position, 5, 0);
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 5);
-        assert_eq!(oi[0].side, Side::Buy);
+        let (sent, saved) = make_orders(position, 5);
+        let sent = sent.unwrap();
+        assert_eq!(sent.qty, 5);
+        assert_eq!(sent.side, Side::Buy);
+        assert!(saved.is_none())
     }
 
     #[test]
@@ -85,10 +77,11 @@ mod test {
             ticker: "AAPL".into(),
             qty: 10,
         };
-        let oi = make_orders(position, 15, 0);
-        assert_eq!(oi.len(), 1);
-        assert_eq!(oi[0].qty, 5);
-        assert_eq!(oi[0].side, Side::Sell);
+        let (sent, saved) = make_orders(position, 15);
+        let sent = sent.unwrap();
+        assert_eq!(sent.qty, 5);
+        assert_eq!(sent.side, Side::Sell);
+        assert!(saved.is_none())
     }
 
     #[test]
@@ -99,8 +92,9 @@ mod test {
             ticker: "AAPL".into(),
             qty: 10,
         };
-        let oi = make_orders(position, 10, 0);
-        assert_eq!(oi.len(), 0);
+        let (sent, saved) = make_orders(position, 10);
+        assert!(sent.is_none());
+        assert!(saved.is_none());
     }
 
     #[test]
@@ -111,15 +105,13 @@ mod test {
             ticker: "AAPL".into(),
             qty: -15,
         };
-        let oi = make_orders(position, 10, 0);
-        println!("{:?}", oi);
-        assert_eq!(oi.len(), 3);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Sell);
-        assert_eq!(oi[1].qty, 10);
-        assert_eq!(oi[1].side, Side::Sell);
-        assert_eq!(oi[2].qty, 5);
-        assert_eq!(oi[2].side, Side::Sell);
+        let (sent, saved) = make_orders(position, 10);
+        let sent = sent.unwrap();
+        let saved = saved.unwrap();
+        assert_eq!(sent.qty, 10);
+        assert_eq!(sent.side, Side::Sell);
+        assert_eq!(saved.qty, 15);
+        assert_eq!(saved.side, Side::Sell);
     }
 
     #[test]
@@ -130,14 +122,12 @@ mod test {
             ticker: "AAPL".into(),
             qty: 15,
         };
-        let oi = make_orders(position, -10, 0);
-        println!("{:?}", oi);
-        assert_eq!(oi.len(), 3);
-        assert_eq!(oi[0].qty, 10);
-        assert_eq!(oi[0].side, Side::Buy);
-        assert_eq!(oi[1].qty, 10);
-        assert_eq!(oi[1].side, Side::Buy);
-        assert_eq!(oi[2].qty, 5);
-        assert_eq!(oi[2].side, Side::Buy);
+        let (sent, saved) = make_orders(position, -10);
+        let sent = sent.unwrap();
+        let saved = saved.unwrap();
+        assert_eq!(sent.qty, 10);
+        assert_eq!(sent.side, Side::Buy);
+        assert_eq!(saved.qty, 15);
+        assert_eq!(saved.side, Side::Buy);
     }
 }

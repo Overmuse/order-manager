@@ -33,16 +33,13 @@ pub(crate) async fn pending_order_intents_by_ticker(
 }
 
 #[tracing::instrument(skip(db))]
-pub(crate) async fn save_order_intents(
-    db: &Database,
-    order_intents: Vec<OrderIntent>,
-) -> Result<()> {
-    trace!("Saving order intents: {:?}", order_intents);
+pub(crate) async fn save_order_intent(db: &Database, order_intent: OrderIntent) -> Result<()> {
+    trace!("Saving order intent: {:?}", order_intent);
     let order_intent_collection: Collection<OrderIntent> = db.collection_with_type("order-intents");
     order_intent_collection
-        .insert_many(order_intents, None)
+        .insert_one(order_intent, None)
         .await
-        .context("Failed to insert order-intents into database")?;
+        .context("Failed to insert order-intent into database")?;
     Ok(())
 }
 
