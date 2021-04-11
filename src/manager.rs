@@ -26,6 +26,7 @@ pub struct OrderManager {
     db: Database,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Input {
