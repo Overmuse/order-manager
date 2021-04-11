@@ -26,6 +26,7 @@ pub struct OrderManager {
     db: Database,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Input {
@@ -53,7 +54,7 @@ impl StreamProcessor for OrderManager {
             Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
                 trace!("Received OrderEvent: {:?}", order_event);
                 let res = self
-                    .register_order(*order_event)
+                    .register_order(order_event)
                     .await
                     .context("Failed to register order")?;
                 Ok(res.map(|x| vec![x]))
@@ -125,7 +126,7 @@ impl OrderManager {
                     client_order_id: sent
                         .client_order_id
                         .clone()
-                        .expect("Every order should have client_order_id"),
+                        .expect("Every order-intent we send has a client_order_id"),
                     order: saved,
                 };
                 save_dependent_order(&self.db, dependent_order).await?;
@@ -136,11 +137,7 @@ impl OrderManager {
     }
 
     async fn register_order(&self, msg: OrderEvent) -> Result<Option<OrderIntent>> {
-        let client_order_id = msg
-            .order
-            .client_order_id
-            .as_ref()
-            .expect("Every order should have client_order_id");
+        let client_order_id = &msg.order.client_order_id;
         upsert_order(&self.db, msg.order.clone()).await?;
         delete_order_intent_by_id(&self.db, client_order_id).await?;
         match msg.event {

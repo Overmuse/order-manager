@@ -20,6 +20,11 @@ async fn main() -> Result<()> {
     let (admin, admin_options, consumer, producer) = setup(&mongo_client).await;
     debug!("Subscribing to topics");
     consumer.subscribe(&[&"order-intents"]).unwrap();
+    consumer
+        .subscription()
+        .unwrap()
+        .set_all_offsets(rdkafka::topic_partition_list::Offset::End)
+        .unwrap();
 
     tokio::spawn(async {
         std::env::set_var("DATABASE__NAME", "testdb");

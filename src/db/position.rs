@@ -7,7 +7,7 @@ use tracing::trace;
 #[tracing::instrument(skip(db))]
 pub(crate) async fn delete_position_by_ticker(db: &Database, ticker: &str) -> Result<()> {
     trace!("Deleting position for ticker {}", ticker);
-    let position_collection: Collection<Position> = db.collection_with_type("positions");
+    let position_collection: Collection<Position> = db.collection("positions");
     position_collection
         .find_one_and_delete(doc! {"ticker": ticker}, None)
         .await
@@ -18,7 +18,7 @@ pub(crate) async fn delete_position_by_ticker(db: &Database, ticker: &str) -> Re
 #[tracing::instrument(skip(db))]
 pub(crate) async fn get_positions(db: &Database) -> Result<Cursor<Position>> {
     trace!("Fetching positions");
-    let position_collection: Collection<Position> = db.collection_with_type("positions");
+    let position_collection: Collection<Position> = db.collection("positions");
     position_collection
         .find(None, None)
         .await
@@ -31,7 +31,7 @@ pub(crate) async fn get_position_by_ticker(
     ticker: &str,
 ) -> Result<Option<Position>> {
     trace!("Fetching position for ticker {}", ticker);
-    let position_collection: Collection<Position> = db.collection_with_type("positions");
+    let position_collection: Collection<Position> = db.collection("positions");
     position_collection
         .find_one(doc! {"ticker": ticker}, None)
         .await
@@ -44,7 +44,7 @@ pub(crate) async fn upsert_position(db: &Database, position: Position) -> Result
         delete_position_by_ticker(db, &position.ticker).await?
     } else {
         trace!("Upserting position: {:?}", position);
-        let position_collection: Collection<Position> = db.collection_with_type("positions");
+        let position_collection: Collection<Position> = db.collection("positions");
         position_collection
             .find_one_and_replace(
                 doc! {"ticker": &position.ticker},
