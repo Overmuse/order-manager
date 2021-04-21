@@ -15,21 +15,21 @@ pub fn make_orders(
         if signum_product >= 0 {
             // No restrictions on trading, just send the diff in qty
             let qty = position.qty - owned_qty;
-            let trade = order_intent(&position.ticker, qty);
+            let trade = order_intent(&position.id, &position.ticker, qty);
             (Some(trade), None)
         } else {
             // Quantities have different signs
-            let sent = order_intent(&position.ticker, -owned_qty);
-            let saved = order_intent(&position.ticker, position.qty);
+            let sent = order_intent(&position.id, &position.ticker, -owned_qty);
+            let saved = order_intent(&position.id, &position.ticker, position.qty);
             (Some(sent), Some(saved))
         }
     }
 }
 
-fn order_intent(ticker: &str, qty: i32) -> OrderIntent {
+fn order_intent(prefix: &str, ticker: &str, qty: i32) -> OrderIntent {
     let side = if qty > 0 { Side::Buy } else { Side::Sell };
     OrderIntent::new(ticker)
-        .client_order_id(Uuid::new_v4().to_string())
+        .client_order_id(format!("{}_{}", prefix, Uuid::new_v4().to_string()))
         .qty(qty.abs() as usize)
         .side(side)
 }
@@ -42,6 +42,7 @@ mod test {
     #[test]
     fn no_current_position() {
         let position = PositionIntent {
+            id: "A".into(),
             strategy: "A".into(),
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
@@ -57,6 +58,7 @@ mod test {
     #[test]
     fn accumulation() {
         let position = PositionIntent {
+            id: "A".into(),
             strategy: "A".into(),
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
@@ -72,6 +74,7 @@ mod test {
     #[test]
     fn decumulation() {
         let position = PositionIntent {
+            id: "A".into(),
             strategy: "A".into(),
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
@@ -87,6 +90,7 @@ mod test {
     #[test]
     fn no_change() {
         let position = PositionIntent {
+            id: "A".into(),
             strategy: "A".into(),
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
@@ -100,6 +104,7 @@ mod test {
     #[test]
     fn long_to_short() {
         let position = PositionIntent {
+            id: "A".into(),
             strategy: "A".into(),
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
@@ -117,6 +122,7 @@ mod test {
     #[test]
     fn short_to_long() {
         let position = PositionIntent {
+            id: "A".into(),
             strategy: "A".into(),
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
