@@ -44,7 +44,7 @@ impl StreamProcessor for OrderManager {
     async fn handle_message(&self, msg: Self::Input) -> Result<Option<Vec<Self::Output>>> {
         match msg {
             Input::PositionIntent(position_intent) => {
-                trace!("Received PositionIntent: {:?}", position_intent);
+                debug!("Received PositionIntent: {:?}", position_intent);
                 let res = self
                     .handle_position_intent(position_intent)
                     .await
@@ -52,7 +52,7 @@ impl StreamProcessor for OrderManager {
                 Ok(res.map(|x| vec![x]))
             }
             Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
-                trace!("Received OrderEvent: {:?}", order_event);
+                debug!("Received OrderEvent: {:?}", order_event);
                 let res = self
                     .register_order(order_event)
                     .await
@@ -109,9 +109,11 @@ impl OrderManager {
             .await?
             .map(|position| position.qty)
             .unwrap_or(0);
-        debug!(
+        trace!(
             "Pending order qty: {}\nPending order intent qty: {}\nCurrent qty: {}",
-            pending_order_qty, pending_order_intent_qty, current_qty
+            pending_order_qty,
+            pending_order_intent_qty,
+            current_qty
         );
         // TODO: Deal with pending quantities
         match make_orders(position_intent, current_qty) {
