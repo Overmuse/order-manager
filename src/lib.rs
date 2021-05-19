@@ -6,6 +6,7 @@ use mongodb::Client;
 use serde::{Deserialize, Serialize};
 pub use settings::Settings;
 use stream_processor::StreamRunner;
+use tracing::info;
 
 mod db;
 pub mod manager;
@@ -42,6 +43,7 @@ pub struct DependentOrder {
 }
 
 pub async fn run(settings: Settings) -> Result<()> {
+    info!("Starting order-manager");
     let client = Client::with_uri_str(&settings.database.url)
         .await
         .context("Failed to create mongo client")?;

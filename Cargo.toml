@@ -10,7 +10,7 @@ edition = "2018"
 alpaca = {git = "ssh://git@github.com/Overmuse/alpaca.git", tag = "v0.6.0", default-features = false, features = ["rest", "ws"]}
 anyhow = "1.0.39"
 async-trait = "0.1.48"
-bson = "1.2.0"
+bson = "2.0.0-beta"
 chrono = "0.4.19"
 config = "0.10.1"
 dotenv = "0.15.0"

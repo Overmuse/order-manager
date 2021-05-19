@@ -1,7 +1,7 @@
 use crate::Position;
 use anyhow::{Context, Result};
 use bson::doc;
-use mongodb::{Collection, Cursor, Database};
+use mongodb::{options::FindOneAndReplaceOptions, Collection, Cursor, Database};
 use tracing::trace;
 
 #[tracing::instrument(skip(db))]
@@ -49,9 +49,7 @@ pub(crate) async fn upsert_position(db: &Database, position: Position) -> Result
             .find_one_and_replace(
                 doc! {"ticker": &position.ticker},
                 position,
-                mongodb::options::FindOneAndReplaceOptions::builder()
-                    .upsert(true)
-                    .build(),
+                FindOneAndReplaceOptions::builder().upsert(true).build(),
             )
             .await
             .context("Failed to update position")?;
