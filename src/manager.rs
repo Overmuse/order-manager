@@ -7,74 +7,43 @@ use crate::db::{
     order_intent::{delete_order_intent_by_id, pending_order_intents_by_ticker, save_order_intent},
     position::{get_position_by_ticker, upsert_position},
 };
-use crate::{order_generator::make_orders, DependentOrder, PositionIntent};
+use crate::{order_generator::make_orders, DependentOrder, Input, PositionIntent};
 use alpaca::{
     common::Side,
     orders::OrderIntent,
     stream::{AlpacaMessage, Event, OrderEvent},
 };
-use anyhow::{Context, Error, Result};
-use bson::doc;
+use anyhow::{Context, Result};
 use futures::StreamExt;
 use mongodb::Database;
-use serde::Deserialize;
-use std::borrow::Cow;
-use stream_processor::StreamProcessor;
 use tracing::{debug, trace};
 
 pub struct OrderManager {
     db: Database,
 }
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum Input {
-    PositionIntent(PositionIntent),
-    AlpacaMessage(AlpacaMessage),
-}
-
-#[async_trait::async_trait]
-impl StreamProcessor for OrderManager {
-    type Input = Input;
-    type Output = OrderIntent;
-    type Error = Error;
-
-    #[tracing::instrument(skip(self, msg))]
-    async fn handle_message(&self, msg: Self::Input) -> Result<Option<Vec<Self::Output>>> {
-        match msg {
-            Input::PositionIntent(position_intent) => {
-                debug!("Received PositionIntent: {:?}", position_intent);
-                let res = self
-                    .handle_position_intent(position_intent)
-                    .await
-                    .context("Failed to handle position intent")?;
-                Ok(res.map(|x| vec![x]))
-            }
-            Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
-                debug!("Received OrderEvent: {:?}", order_event);
-                let res = self
-                    .register_order(order_event)
-                    .await
-                    .context("Failed to register order")?;
-                Ok(res.map(|x| vec![x]))
-            }
-            Input::AlpacaMessage(_) => unreachable!(),
-        }
-    }
-
-    fn assign_topic(&self, _output: &Self::Output) -> Cow<str> {
-        Cow::Borrowed("order-intents")
-    }
-
-    fn assign_key(&self, output: &Self::Output) -> Cow<str> {
-        Cow::Owned(output.symbol.clone())
-    }
-}
-
 impl OrderManager {
     pub fn new(db: Database) -> Self {
         Self { db }
+    }
+
+    #[tracing::instrument(skip(self, msg))]
+    pub async fn handle_message(&self, msg: Input) -> Result<Option<OrderIntent>> {
+        match msg {
+            Input::PositionIntent(position_intent) => {
+                debug!("Received PositionIntent: {:?}", position_intent);
+                self.handle_position_intent(position_intent)
+                    .await
+                    .context("Failed to handle position intent")
+            }
+            Input::AlpacaMessage(AlpacaMessage::TradeUpdates(order_event)) => {
+                debug!("Received OrderEvent: {:?}", order_event);
+                self.register_order(order_event)
+                    .await
+                    .context("Failed to register order")
+            }
+            Input::AlpacaMessage(_) => unreachable!(),
+        }
     }
 
     async fn handle_position_intent(
@@ -139,10 +108,11 @@ impl OrderManager {
     }
 
     async fn register_order(&self, msg: OrderEvent) -> Result<Option<OrderIntent>> {
+        trace!("Beginning order registration");
         let client_order_id = &msg.order.client_order_id;
         upsert_order(&self.db, msg.order.clone()).await?;
         delete_order_intent_by_id(&self.db, client_order_id).await?;
-        match msg.event {
+        let res = match msg.event {
             Event::Fill {
                 price,
                 position_qty,
@@ -179,6 +149,8 @@ impl OrderManager {
                 Ok(None)
             }
             _ => Ok(None),
-        }
+        };
+        trace!("Finishing order registration");
+        res
     }
 }

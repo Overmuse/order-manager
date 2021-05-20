@@ -47,6 +47,7 @@ mod test {
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
+            condition: None,
         };
         let (sent, saved) = make_orders(position, 0);
         let sent = sent.unwrap();
@@ -63,6 +64,7 @@ mod test {
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
+            condition: None,
         };
         let (sent, saved) = make_orders(position, 5);
         let sent = sent.unwrap();
@@ -79,6 +81,7 @@ mod test {
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
+            condition: None,
         };
         let (sent, saved) = make_orders(position, 15);
         let sent = sent.unwrap();
@@ -95,6 +98,7 @@ mod test {
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 10,
+            condition: None,
         };
         let (sent, saved) = make_orders(position, 10);
         assert!(sent.is_none());
@@ -109,6 +113,7 @@ mod test {
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: -15,
+            condition: None,
         };
         let (sent, saved) = make_orders(position, 10);
         let sent = sent.unwrap();
@@ -127,6 +132,7 @@ mod test {
             timestamp: Utc::now(),
             ticker: "AAPL".into(),
             qty: 15,
+            condition: None,
         };
         let (sent, saved) = make_orders(position, -10);
         let sent = sent.unwrap();

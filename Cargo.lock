@@ -1063,8 +1063,8 @@ dependencies = [
  "rdkafka",
  "serde 1.0.126",
  "serde_json",
- "stream-processor",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1694,21 +1694,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "stream-processor"
-version = "0.2.1"
-source = "git+ssh://git@github.com/Overmuse/stream-processor?tag=v0.2.1#ea661616152db286b550971afc7260c79b80bef6"
-dependencies = [
- "async-trait",
- "futures",
- "kafka-settings",
- "rdkafka",
- "serde 1.0.126",
- "serde_json",
- "thiserror",
- "tracing",
-]
-
-[[package]]
 name = "stringprep"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1862,6 +1847,17 @@ dependencies = [
  "rustls",
  "tokio",
  "webpki",
+]
+
+[[package]]
+name = "tokio-stream"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8864d706fdb3cc0843a49647ac892720dac98a6eeb818b77190592cf4994066"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
