@@ -18,7 +18,7 @@ mod teardown;
 
 async fn send_position(producer: &FutureProducer, ticker: &str, qty: i32) -> Result<()> {
     let payload = position_payload(ticker.into(), qty);
-    let intent = FutureRecord::to("position_intents")
+    let intent = FutureRecord::to("position-intents")
         .key(ticker)
         .payload(&payload);
     producer

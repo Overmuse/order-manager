@@ -2,7 +2,6 @@ use crate::manager::OrderManager;
 use alpaca::{rest::orders::OrderIntent, stream::AlpacaMessage};
 use anyhow::{anyhow, Context, Result};
 use chrono::prelude::*;
-use futures::prelude::*;
 use mongodb::Client;
 use rdkafka::{producer::FutureProducer, Message};
 use serde::{Deserialize, Serialize};
@@ -89,15 +88,12 @@ pub async fn run(settings: Settings) -> Result<()> {
     });
     let database = client.database(&settings.database.name);
     let order_manager = OrderManager::new(database);
-    consumer
-        .stream()
-        .map(|msg| {
-            let parsed: Input = serde_json::from_slice(msg.unwrap().payload().unwrap()).unwrap();
-            parsed
-        })
-        .map(|inp| async { order_manager.handle_message(inp).await })
-        .for_each(|oi| async { tx.send(oi.await.unwrap().unwrap()).unwrap() })
-        .await;
-
-    Ok(())
+    loop {
+        let msg = consumer.recv().await?;
+        let parsed: Input = serde_json::from_slice(msg.payload().ok_or(anyhow!("Empty payload"))?)?;
+        let oi = order_manager.handle_message(parsed).await?;
+        if let Some(oi) = oi {
+            tx.send(oi)?;
+        }
+    }
 }
