@@ -90,7 +90,8 @@ pub async fn run(settings: Settings) -> Result<()> {
     let order_manager = OrderManager::new(database);
     loop {
         let msg = consumer.recv().await?;
-        let parsed: Input = serde_json::from_slice(msg.payload().ok_or(anyhow!("Empty payload"))?)?;
+        let parsed: Input =
+            serde_json::from_slice(msg.payload().ok_or_else(|| anyhow!("Empty payload"))?)?;
         let oi = order_manager.handle_message(parsed).await?;
         if let Some(oi) = oi {
             tx.send(oi)?;
