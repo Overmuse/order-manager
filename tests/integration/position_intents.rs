@@ -9,6 +9,7 @@ pub fn position_payload(ticker: &str, qty: i32) -> Vec<u8> {
         timestamp: Utc::now(),
         ticker: ticker.to_string(),
         qty,
+        limit_price: None,
     };
     serde_json::to_vec(&pi).unwrap()
 }
