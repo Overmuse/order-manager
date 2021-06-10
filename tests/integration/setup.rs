@@ -1,4 +1,3 @@
-use mongodb::Client;
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     client::DefaultClientContext,
@@ -9,16 +8,13 @@ use rdkafka::{
 use tracing::{debug, subscriber::set_global_default};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-pub async fn setup(
-    mongo_client: &Client,
-) -> (
+pub async fn setup() -> (
     AdminClient<DefaultClientContext>,
     AdminOptions,
     StreamConsumer,
     FutureProducer,
 ) {
     // Drop database, don't care if it fails
-    let _ = mongo_client.database("testdb").drop(None).await;
     let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
         .set("bootstrap.servers", "localhost:9094")
         .set("security.protocol", "PLAINTEXT")
