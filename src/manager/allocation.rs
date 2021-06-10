@@ -7,21 +7,23 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(super) enum Owner {
     House,
-    Strategy(String),
+    Strategy(String, Option<String>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct Claim {
     pub id: Uuid,
     pub strategy: String,
+    pub sub_strategy: Option<String>,
     pub amount: AmountSpec,
 }
 
 impl Claim {
-    pub(super) fn new(strategy: String, amount: AmountSpec) -> Self {
+    pub(super) fn new(strategy: String, sub_strategy: Option<String>, amount: AmountSpec) -> Self {
         Self {
             id: Uuid::new_v4(),
             strategy,
+            sub_strategy,
             amount,
         }
     }
@@ -82,7 +84,7 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
             _ => unimplemented!(),
         };
         out.push(Allocation::new(
-            Owner::Strategy(claim.strategy.clone()),
+            Owner::Strategy(claim.strategy.clone(), claim.sub_strategy.clone()),
             Some(claim.id),
             lot.id,
             lot.ticker.clone(),
@@ -157,15 +159,19 @@ mod test {
             Decimal::new(10, 0),
         );
         let claims = vec![
-            Claim::new("A".into(), AmountSpec::Dollars(Decimal::new(400, 0))),
-            Claim::new("B".into(), AmountSpec::Shares(Decimal::new(25, 1))),
+            Claim::new("A".into(), None, AmountSpec::Dollars(Decimal::new(400, 0))),
+            Claim::new(
+                "B".into(),
+                Some("B2".into()),
+                AmountSpec::Shares(Decimal::new(25, 1)),
+            ),
         ];
         let allocations = split_lot(&claims, &lot);
         assert_eq!(allocations.len(), 3);
         assert_eq!(
             allocations[0],
             Allocation::new(
-                Owner::Strategy("A".into()),
+                Owner::Strategy("A".into(), None),
                 Some(claims[0].id),
                 lot.id,
                 "AAPL".into(),
@@ -176,7 +182,7 @@ mod test {
         assert_eq!(
             allocations[1],
             Allocation::new(
-                Owner::Strategy("B".into()),
+                Owner::Strategy("B".into(), Some("B2".into())),
                 Some(claims[1].id),
                 lot.id,
                 "AAPL".into(),

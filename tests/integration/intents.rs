@@ -8,9 +8,10 @@ pub fn position_payload(
     amount: AmountSpec,
     limit_price: Option<Decimal>,
 ) -> Vec<u8> {
-    let mut pi = PositionIntent::new(strategy.to_string(), ticker.to_string(), amount);
+    let mut builder = PositionIntent::builder(strategy.to_string(), ticker.to_string(), amount);
     if let Some(limit) = limit_price {
-        pi = pi.limit_price(limit)
+        builder = builder.limit_price(limit)
     }
+    let pi = builder.build();
     serde_json::to_vec(&pi).unwrap()
 }

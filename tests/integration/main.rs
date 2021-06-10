@@ -1,5 +1,6 @@
 use alpaca::orders::OrderIntent;
 use anyhow::{anyhow, Result};
+use futures::FutureExt;
 use order_manager::{run, Settings};
 use position_intents::AmountSpec;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -209,6 +210,22 @@ async fn main() -> Result<()> {
         new_id
     );
     send_order_event(&producer, &fill_message).await.unwrap();
+
+    // Test 7: Can send `Retain` `AmountSpec`s and not generate orders
+    send_position(&producer, "S2", "AAPL", AmountSpec::RetainLong, None)
+        .await
+        .unwrap();
+    assert!(consumer.recv().now_or_never().is_none());
+    send_position(&producer, "S2", "AAPL", AmountSpec::Retain, None)
+        .await
+        .unwrap();
+    assert!(consumer.recv().now_or_never().is_none());
+    send_position(&producer, "S2", "AAPL", AmountSpec::RetainShort, None)
+        .await
+        .unwrap();
+    let order_intent = receive_oi(&consumer).await.unwrap();
+    assert_eq!(order_intent.qty, 100);
+    assert_eq!(order_intent.side, alpaca::common::Side::Sell);
 
     teardown(&admin, &admin_options).await;
     Ok(())
