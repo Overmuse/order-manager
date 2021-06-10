@@ -17,8 +17,14 @@ mod order_events;
 mod setup;
 mod teardown;
 
-async fn send_position(producer: &FutureProducer, ticker: &str, amount: AmountSpec) -> Result<()> {
-    let payload = position_payload(ticker.into(), amount);
+async fn send_position(
+    producer: &FutureProducer,
+    strategy: &str,
+    ticker: &str,
+    amount: AmountSpec,
+    limit: Option<Decimal>,
+) -> Result<()> {
+    let payload = position_payload(strategy, ticker, amount, limit);
     let intent = FutureRecord::to("position-intents")
         .key(ticker)
         .payload(&payload);
@@ -71,9 +77,15 @@ async fn main() -> Result<()> {
     // TEST 1: An initial position intent leads to an order intent for the full size of the
     // position intent.
     info!("Test 1");
-    send_position(&producer, "AAPL", AmountSpec::Shares(Decimal::new(100, 0)))
-        .await
-        .unwrap();
+    send_position(
+        &producer,
+        "S1",
+        "AAPL",
+        AmountSpec::Shares(Decimal::new(100, 0)),
+        None,
+    )
+    .await
+    .unwrap();
 
     let order_intent = receive_oi(&consumer).await.unwrap();
     assert_eq!(order_intent.qty, 100);
@@ -87,9 +99,15 @@ async fn main() -> Result<()> {
         original_id
     );
     send_order_event(&producer, &fill_message).await.unwrap();
-    send_position(&producer, "AAPL", AmountSpec::Shares(Decimal::new(150, 0)))
-        .await
-        .unwrap();
+    send_position(
+        &producer,
+        "S1",
+        "AAPL",
+        AmountSpec::Shares(Decimal::new(150, 0)),
+        None,
+    )
+    .await
+    .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
     assert_eq!(order_intent.qty, 50);
     let new_id = order_intent.client_order_id.unwrap();
@@ -101,9 +119,15 @@ async fn main() -> Result<()> {
 
     // TEST 3: A change in net side generates one initial trade and one deferred trade
     info!("Test 3");
-    send_position(&producer, "AAPL", AmountSpec::Shares(Decimal::new(-100, 0)))
-        .await
-        .unwrap();
+    send_position(
+        &producer,
+        "S1",
+        "AAPL",
+        AmountSpec::Shares(Decimal::new(-100, 0)),
+        None,
+    )
+    .await
+    .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
     assert_eq!(order_intent.qty, 150);
     assert_eq!(order_intent.side, alpaca::common::Side::Sell);
@@ -127,8 +151,10 @@ async fn main() -> Result<()> {
     info!("Test 4");
     send_position(
         &producer,
+        "S1",
         "AAPL",
         AmountSpec::Shares(Decimal::new(-1005, 1)),
+        None,
     )
     .await
     .unwrap();
@@ -144,7 +170,7 @@ async fn main() -> Result<()> {
 
     // TEST 5: Can send Zero position size
     info!("Test 5");
-    send_position(&producer, "AAPL", AmountSpec::Zero)
+    send_position(&producer, "S1", "AAPL", AmountSpec::Zero, None)
         .await
         .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
@@ -153,6 +179,33 @@ async fn main() -> Result<()> {
     let new_id = order_intent.client_order_id.unwrap();
     let fill_message = format!(
         r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"0","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"101","filled_qty":"101","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"buy","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+        new_id
+    );
+    send_order_event(&producer, &fill_message).await.unwrap();
+
+    // TEST 6: Can deal with multiple strategies and limit orders
+    info!("Test 6");
+    send_position(
+        &producer,
+        "S2",
+        "AAPL",
+        AmountSpec::Shares(Decimal::new(100, 0)),
+        Some(Decimal::new(100, 0)),
+    )
+    .await
+    .unwrap();
+    let order_intent = receive_oi(&consumer).await.unwrap();
+    assert_eq!(order_intent.qty, 100);
+    assert_eq!(order_intent.side, alpaca::common::Side::Buy);
+    assert_eq!(
+        order_intent.order_type,
+        alpaca::OrderType::Limit {
+            limit_price: Decimal::new(100, 0)
+        }
+    );
+    let new_id = order_intent.client_order_id.unwrap();
+    let fill_message = format!(
+        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"100","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"100","filled_qty":"100","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"buy","time_in_force":"day","limit_price":100.0,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
         new_id
     );
     send_order_event(&producer, &fill_message).await.unwrap();
