@@ -50,18 +50,16 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self, intent), fields(id = %intent.id))]
     fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
-        let res = self
-            .scheduler_sender
+        self.scheduler_sender
             .send(intent)
-            .context("Failed to send intent to scheduler")?;
-        Ok(res)
+            .context("Failed to send intent to scheduler")
     }
 
     #[tracing::instrument(skip(self))]
     fn get_positions(&self, ticker: &str) -> Vec<Position> {
         let mut allocations = self.allocations.clone();
         trace!("Current allocations: {:?}", allocations);
-        allocations.retain(|x| &x.ticker == ticker);
+        allocations.retain(|x| x.ticker == ticker);
         allocations
             .group_by(|a1, a2| a1.owner == a2.owner)
             .map(|allocs| Position::from_allocations(allocs))

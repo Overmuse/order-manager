@@ -8,6 +8,7 @@ use tracing::trace;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub(super) enum Input {
     PositionIntent(PositionIntent),
     AlpacaMessage(AlpacaMessage),

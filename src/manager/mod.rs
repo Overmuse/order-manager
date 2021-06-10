@@ -72,7 +72,7 @@ impl OrderManager {
                 .await
                 .context("Failed to handle OrderEvent")?,
             Ok(Input::AlpacaMessage(_)) => unreachable!(),
-            Err(e) => Err(e)?,
+            Err(e) => return Err(e),
         };
         Ok(())
     }
