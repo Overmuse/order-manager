@@ -33,7 +33,10 @@ impl OrderManager {
         let positions = self.get_positions(&intent.ticker);
         trace!("Current position: {:?}", positions);
         match self.make_orders(&intent, &positions) {
-            (None, None, None) => Ok(()),
+            (None, None, None) => {
+                trace!("No trades generated");
+                Ok(())
+            }
             (Some(claim), Some(sent), None) => {
                 self.unfilled_claims.insert(intent.ticker, claim);
                 Ok(self.order_sender.send(sent)?)
@@ -78,7 +81,9 @@ impl OrderManager {
         let (strategy_shares, total_shares) = positions.iter().fold(
             (Decimal::ZERO, Decimal::ZERO),
             |(strat_shares, all_shares), pos| {
-                if pos.owner == Owner::Strategy(intent.strategy.clone()) {
+                if pos.owner
+                    == Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone())
+                {
                     (strat_shares + pos.shares, all_shares + pos.shares)
                 } else {
                     (strat_shares, all_shares + pos.shares)
@@ -92,34 +97,61 @@ impl OrderManager {
                 let price = intent
                     .decision_price
                     .or(intent.limit_price)
-                    .expect("Need either limit price or decision price");
+                    .or(intent.stop_price)
+                    .expect("Need either limit price, stop price or decision price");
                 dollars / price - strategy_shares
             }
             AmountSpec::Shares(shares) => shares - strategy_shares,
             AmountSpec::Zero => -strategy_shares,
+            AmountSpec::Retain => Decimal::ZERO,
+            AmountSpec::RetainLong => {
+                if strategy_shares.is_sign_positive() {
+                    Decimal::ZERO
+                } else {
+                    -strategy_shares
+                }
+            }
+            AmountSpec::RetainShort => {
+                if strategy_shares.is_sign_negative() {
+                    Decimal::ZERO
+                } else {
+                    -strategy_shares
+                }
+            }
             _ => unimplemented!(),
         };
         if diff_shares.is_zero() {
             (None, None, None)
         } else {
-            let claim = Claim::new(intent.strategy.clone(), AmountSpec::Shares(diff_shares));
+            let claim = Claim::new(
+                intent.strategy.clone(),
+                intent.sub_strategy.clone(),
+                AmountSpec::Shares(diff_shares),
+            );
             let signum_product = total_shares.signum() * (diff_shares + total_shares).signum();
             if !signum_product.is_sign_negative() {
-                let trade =
-                    make_order_intent(&intent.id, &intent.ticker, diff_shares, intent.limit_price);
+                let trade = make_order_intent(
+                    &intent.id.to_string(),
+                    &intent.ticker,
+                    diff_shares,
+                    intent.limit_price,
+                    intent.stop_price,
+                );
                 (Some(claim), Some(trade), None)
             } else {
                 let sent = make_order_intent(
-                    &intent.id,
+                    &intent.id.to_string(),
                     &intent.ticker,
                     -total_shares,
                     intent.limit_price,
+                    intent.stop_price,
                 );
                 let saved = make_order_intent(
-                    &intent.id,
+                    &intent.id.to_string(),
                     &intent.ticker,
                     diff_shares + total_shares,
                     intent.limit_price,
+                    intent.stop_price,
                 );
                 (Some(claim), Some(sent), Some(saved))
             }
@@ -132,15 +164,21 @@ fn make_order_intent(
     ticker: &str,
     qty: Decimal,
     limit_price: Option<Decimal>,
+    stop_price: Option<Decimal>,
 ) -> OrderIntent {
     let side = if qty > Decimal::ZERO {
         Side::Buy
     } else {
         Side::Sell
     };
-    let order_type = match limit_price {
-        Some(limit) => OrderType::Limit { limit_price: limit },
-        None => OrderType::Market,
+    let order_type = match (limit_price, stop_price) {
+        (Some(limit_price), Some(stop_price)) => OrderType::StopLimit {
+            limit_price,
+            stop_price,
+        },
+        (Some(limit_price), None) => OrderType::Limit { limit_price },
+        (None, Some(stop_price)) => OrderType::Stop { stop_price },
+        (None, None) => OrderType::Market,
     };
     OrderIntent::new(ticker)
         .client_order_id(format!("{}_{}", prefix, Uuid::new_v4().to_string()))

@@ -1101,8 +1101,8 @@ checksum = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c"
 
 [[package]]
 name = "position-intents"
-version = "0.2.0"
-source = "git+ssh://git@github.com/Overmuse/position-intents.git?tag=v0.2.0#908c06d4cba62b013067a79088bed21de01b1098"
+version = "0.4.0"
+source = "git+ssh://git@github.com/Overmuse/position-intents.git?tag=v0.4.0#2416ffa85cbad18e2a0609ffb759bad696942d14"
 dependencies = [
  "chrono",
  "rust_decimal",
