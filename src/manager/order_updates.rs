@@ -7,6 +7,7 @@ use rust_decimal::prelude::*;
 use tracing::trace;
 
 impl OrderManager {
+    #[tracing::instrument(skip(self, event), fields(id = %event.order.client_order_id))]
     pub(super) async fn handle_order_update(&mut self, event: OrderEvent) -> Result<()> {
         trace!("Handling order update: {:?}", event);
         let id = event.order.client_order_id.clone();
@@ -39,6 +40,7 @@ impl OrderManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     fn make_lot(
         &self,
         id: &str,
@@ -54,6 +56,7 @@ impl OrderManager {
         Lot::new(ticker, timestamp, new_price, new_quantity)
     }
 
+    #[tracing::instrument(skip(self))]
     fn previous_fill_data(&self, order_id: &str) -> (Decimal, Decimal) {
         let previous_lots = self.partially_filled_orders.get_vec(order_id);
         previous_lots
@@ -71,10 +74,12 @@ impl OrderManager {
             .unwrap_or_else(|| (Decimal::new(0, 0), Decimal::new(1, 0)))
     }
 
+    #[tracing::instrument(skip(self))]
     fn save_partially_filled_order_lot(&mut self, order_id: String, lot: Lot) {
         self.partially_filled_orders.insert(order_id, lot);
     }
 
+    #[tracing::instrument(skip(self))]
     fn assign_lot(&mut self, lot: Lot) {
         trace!("Assigning lot to claims: {:?}", lot);
         let claims = self.get_claims(&lot.ticker);
@@ -87,10 +92,12 @@ impl OrderManager {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     fn get_claims(&self, ticker: &str) -> Option<&Vec<Claim>> {
         self.unfilled_claims.get_vec(ticker)
     }
 
+    #[tracing::instrument(skip(self, allocations))]
     fn delete_claims_from_allocations(&mut self, allocations: &[Allocation]) {
         for allocation in allocations {
             let claims = self.unfilled_claims.get_vec_mut(&allocation.ticker);
@@ -120,6 +127,7 @@ impl OrderManager {
         trace!("Remaining claims: {:?}", self.unfilled_claims);
     }
 
+    #[tracing::instrument(skip(self, allocations))]
     fn save_allocations(&mut self, allocations: &[Allocation]) {
         self.allocations.extend_from_slice(allocations)
     }

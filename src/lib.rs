@@ -1,4 +1,3 @@
-#![feature(slice_group_by)]
 use anyhow::{Context, Result};
 use kafka_settings::{consumer, producer};
 //use sqlx::postgres::PgPoolOptions;

@@ -1,4 +1,4 @@
-use super::{Claim, OrderManager, Owner, Position};
+use super::{Allocation, Claim, OrderManager, Owner, Position};
 use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -60,9 +60,13 @@ impl OrderManager {
         let mut allocations = self.allocations.clone();
         trace!("Current allocations: {:?}", allocations);
         allocations.retain(|x| x.ticker == ticker);
-        allocations
-            .group_by(|a1, a2| a1.owner == a2.owner)
-            .map(|allocs| Position::from_allocations(allocs))
+        let mut by_owner: multimap::MultiMap<Owner, Allocation> = multimap::MultiMap::new();
+        for allocation in allocations {
+            by_owner.insert(allocation.owner.clone(), allocation)
+        }
+        by_owner
+            .iter_all()
+            .map(|(_, allocs)| Position::from_allocations(allocs))
             .collect()
     }
 
