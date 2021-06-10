@@ -1,6 +1,7 @@
 use alpaca::orders::OrderIntent;
 use anyhow::{anyhow, Result};
 use order_manager::{run, Settings};
+use position_intents::AmountSpec;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
@@ -16,8 +17,8 @@ mod order_events;
 mod setup;
 mod teardown;
 
-async fn send_position(producer: &FutureProducer, ticker: &str, qty: Decimal) -> Result<()> {
-    let payload = position_payload(ticker.into(), qty);
+async fn send_position(producer: &FutureProducer, ticker: &str, amount: AmountSpec) -> Result<()> {
+    let payload = position_payload(ticker.into(), amount);
     let intent = FutureRecord::to("position-intents")
         .key(ticker)
         .payload(&payload);
@@ -70,7 +71,7 @@ async fn main() -> Result<()> {
     // TEST 1: An initial position intent leads to an order intent for the full size of the
     // position intent.
     info!("Test 1");
-    send_position(&producer, "AAPL", Decimal::new(100, 0))
+    send_position(&producer, "AAPL", AmountSpec::Shares(Decimal::new(100, 0)))
         .await
         .unwrap();
 
@@ -86,7 +87,7 @@ async fn main() -> Result<()> {
         original_id
     );
     send_order_event(&producer, &fill_message).await.unwrap();
-    send_position(&producer, "AAPL", Decimal::new(150, 0))
+    send_position(&producer, "AAPL", AmountSpec::Shares(Decimal::new(150, 0)))
         .await
         .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
@@ -100,7 +101,7 @@ async fn main() -> Result<()> {
 
     // TEST 3: A change in net side generates one initial trade and one deferred trade
     info!("Test 3");
-    send_position(&producer, "AAPL", Decimal::new(-100, 0))
+    send_position(&producer, "AAPL", AmountSpec::Shares(Decimal::new(-100, 0)))
         .await
         .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
@@ -124,15 +125,34 @@ async fn main() -> Result<()> {
 
     // TEST 4: A fractional position intent still leads to integer trade
     info!("Test 4");
-    send_position(&producer, "AAPL", Decimal::new(-1005, 1))
-        .await
-        .unwrap();
+    send_position(
+        &producer,
+        "AAPL",
+        AmountSpec::Shares(Decimal::new(-1005, 1)),
+    )
+    .await
+    .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
     assert_eq!(order_intent.qty, 1);
     assert_eq!(order_intent.side, alpaca::common::Side::Sell);
     let new_id = order_intent.client_order_id.unwrap();
     let fill_message = format!(
         r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"-1","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"1","filled_qty":"1","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"sell","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+        new_id
+    );
+    send_order_event(&producer, &fill_message).await.unwrap();
+
+    // TEST 5: Can send Zero position size
+    info!("Test 5");
+    send_position(&producer, "AAPL", AmountSpec::Zero)
+        .await
+        .unwrap();
+    let order_intent = receive_oi(&consumer).await.unwrap();
+    assert_eq!(order_intent.qty, 101);
+    assert_eq!(order_intent.side, alpaca::common::Side::Buy);
+    let new_id = order_intent.client_order_id.unwrap();
+    let fill_message = format!(
+        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"0","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"101","filled_qty":"101","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"buy","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
         new_id
     );
     send_order_event(&producer, &fill_message).await.unwrap();
