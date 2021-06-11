@@ -13,7 +13,7 @@ impl OrderManager {
     pub(super) fn handle_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
         debug!("Handling position intent");
         if let Some(dt) = intent.before {
-            if dt >= Utc::now() {
+            if dt <= Utc::now() {
                 // Intent has already expired, so don't do anything
                 debug!("Expired intent");
                 return Ok(());

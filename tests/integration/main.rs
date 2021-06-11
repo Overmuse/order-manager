@@ -1,36 +1,29 @@
 use alpaca::orders::OrderIntent;
 use anyhow::{anyhow, Result};
+use chrono::{Duration, Utc};
 use futures::FutureExt;
 use order_manager::{run, Settings};
-use position_intents::AmountSpec;
+use position_intents::{AmountSpec, PositionIntent};
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
 use rust_decimal::Decimal;
 use tracing::{debug, info};
 
-use intents::position_payload;
 use order_events::send_order_event;
 use setup::setup;
 use teardown::teardown;
-mod intents;
 mod order_events;
 mod setup;
 mod teardown;
 
-async fn send_position(
-    producer: &FutureProducer,
-    strategy: &str,
-    ticker: &str,
-    amount: AmountSpec,
-    limit: Option<Decimal>,
-) -> Result<()> {
-    let payload = position_payload(strategy, ticker, amount, limit);
-    let intent = FutureRecord::to("position-intents")
-        .key(ticker)
+async fn send_position(producer: &FutureProducer, intent: &PositionIntent) -> Result<()> {
+    let payload = serde_json::to_vec(intent).unwrap();
+    let message = FutureRecord::to("position-intents")
+        .key(&intent.ticker)
         .payload(&payload);
     producer
-        .send_result(intent)
+        .send_result(message)
         .map_err(|(e, m)| anyhow!("{:?}\n{:?}", e, m))?
         .await?
         .map_err(|(e, m)| anyhow!("{:?}\n{:?}", e, m))?;
@@ -80,10 +73,7 @@ async fn main() -> Result<()> {
     info!("Test 1");
     send_position(
         &producer,
-        "S1",
-        "AAPL",
-        AmountSpec::Shares(Decimal::new(100, 0)),
-        None,
+        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(100, 0))).build(),
     )
     .await
     .unwrap();
@@ -102,10 +92,7 @@ async fn main() -> Result<()> {
     send_order_event(&producer, &fill_message).await.unwrap();
     send_position(
         &producer,
-        "S1",
-        "AAPL",
-        AmountSpec::Shares(Decimal::new(150, 0)),
-        None,
+        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(150, 0))).build(),
     )
     .await
     .unwrap();
@@ -122,10 +109,7 @@ async fn main() -> Result<()> {
     info!("Test 3");
     send_position(
         &producer,
-        "S1",
-        "AAPL",
-        AmountSpec::Shares(Decimal::new(-100, 0)),
-        None,
+        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(-100, 0))).build(),
     )
     .await
     .unwrap();
@@ -152,10 +136,7 @@ async fn main() -> Result<()> {
     info!("Test 4");
     send_position(
         &producer,
-        "S1",
-        "AAPL",
-        AmountSpec::Shares(Decimal::new(-1005, 1)),
-        None,
+        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(-1005, 1))).build(),
     )
     .await
     .unwrap();
@@ -171,9 +152,12 @@ async fn main() -> Result<()> {
 
     // TEST 5: Can send Zero position size
     info!("Test 5");
-    send_position(&producer, "S1", "AAPL", AmountSpec::Zero, None)
-        .await
-        .unwrap();
+    send_position(
+        &producer,
+        &PositionIntent::builder("S1", "AAPL", AmountSpec::Zero).build(),
+    )
+    .await
+    .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
     assert_eq!(order_intent.qty, 101);
     assert_eq!(order_intent.side, alpaca::common::Side::Buy);
@@ -184,14 +168,13 @@ async fn main() -> Result<()> {
     );
     send_order_event(&producer, &fill_message).await.unwrap();
 
-    // TEST 6: Can deal with multiple strategies and limit orders
+    // TEST 6: Can deal with multiple strategies, dollar amounts and limit orders
     info!("Test 6");
     send_position(
         &producer,
-        "S2",
-        "AAPL",
-        AmountSpec::Shares(Decimal::new(100, 0)),
-        Some(Decimal::new(100, 0)),
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::Dollars(Decimal::new(10000, 0)))
+            .limit_price(Decimal::new(100, 0))
+            .build(),
     )
     .await
     .unwrap();
@@ -206,26 +189,65 @@ async fn main() -> Result<()> {
     );
     let new_id = order_intent.client_order_id.unwrap();
     let fill_message = format!(
-        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"100","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"100","filled_qty":"100","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"buy","time_in_force":"day","limit_price":100.0,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"100","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"100","filled_qty":"100","filled_avg_price":"100.0","order_class":"","order_type":"limit","type":"limit","side":"buy","time_in_force":"day","limit_price":100.0,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
         new_id
     );
     send_order_event(&producer, &fill_message).await.unwrap();
 
     // Test 7: Can send `Retain` `AmountSpec`s and not generate orders
-    send_position(&producer, "S2", "AAPL", AmountSpec::RetainLong, None)
-        .await
-        .unwrap();
+    info!("Test 7");
+    send_position(
+        &producer,
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::RetainLong).build(),
+    )
+    .await
+    .unwrap();
     assert!(consumer.recv().now_or_never().is_none());
-    send_position(&producer, "S2", "AAPL", AmountSpec::Retain, None)
-        .await
-        .unwrap();
+    send_position(
+        &producer,
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::Retain).build(),
+    )
+    .await
+    .unwrap();
     assert!(consumer.recv().now_or_never().is_none());
-    send_position(&producer, "S2", "AAPL", AmountSpec::RetainShort, None)
-        .await
-        .unwrap();
+    send_position(
+        &producer,
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::RetainShort).build(),
+    )
+    .await
+    .unwrap();
     let order_intent = receive_oi(&consumer).await.unwrap();
     assert_eq!(order_intent.qty, 100);
     assert_eq!(order_intent.side, alpaca::common::Side::Sell);
+    let fill_message = format!(
+        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"0","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"100","filled_qty":"100","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"sell","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+        new_id
+    );
+    send_order_event(&producer, &fill_message).await.unwrap();
+
+    // Test 8: Can send expired intent and have no generated orders
+    info!("Test 8");
+    send_position(
+        &producer,
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::Shares(Decimal::new(100, 0)))
+            .before(Utc::now() - Duration::days(1))
+            .build(),
+    )
+    .await
+    .unwrap();
+    assert!(consumer.recv().now_or_never().is_none());
+
+    // Test 9: Can send intent to be scheduled
+    info!("Test 9");
+    send_position(
+        &producer,
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::Shares(Decimal::new(100, 0)))
+            .after(Utc::now() + Duration::seconds(1))
+            .build(),
+    )
+    .await
+    .unwrap();
+    let _order_intent = receive_oi(&consumer).await.unwrap();
 
     teardown(&admin, &admin_options).await;
     Ok(())
