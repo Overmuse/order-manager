@@ -2,7 +2,7 @@ use alpaca::orders::OrderIntent;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 pub struct OrderSender {
     producer: FutureProducer,
@@ -22,7 +22,7 @@ impl OrderSender {
         info!("Starting OrderSender");
         let producer = self.producer;
         while let Some(oi) = self.order_queue.recv().await {
-            debug!("Sending order_intent: {:?}", oi);
+            info!("Sending order_intent");
             let payload = serde_json::to_string(&oi);
             match payload {
                 Ok(payload) => {

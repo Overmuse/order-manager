@@ -4,12 +4,12 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use position_intents::AmountSpec;
 use rust_decimal::prelude::*;
-use tracing::trace;
+use tracing::debug;
 
 impl OrderManager {
     #[tracing::instrument(skip(self, event), fields(id = %event.order.client_order_id))]
     pub(super) async fn handle_order_update(&mut self, event: OrderEvent) -> Result<()> {
-        trace!("Handling order update: {:?}", event);
+        debug!("Handling order update");
         let id = event.order.client_order_id.clone();
         let ticker = event.order.symbol.clone();
         let qty = match event.order.side {
@@ -22,6 +22,7 @@ impl OrderManager {
             Event::Fill {
                 price, timestamp, ..
             } => {
+                debug!("Fill");
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
                 self.save_partially_filled_order_lot(id.clone(), new_lot.clone());
                 self.assign_lot(new_lot);
@@ -31,6 +32,7 @@ impl OrderManager {
             Event::PartialFill {
                 price, timestamp, ..
             } => {
+                debug!("Partial fill");
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
                 self.save_partially_filled_order_lot(id, new_lot.clone());
                 self.assign_lot(new_lot);
@@ -81,12 +83,9 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self))]
     fn assign_lot(&mut self, lot: Lot) {
-        trace!("Assigning lot to claims: {:?}", lot);
         let claims = self.get_claims(&lot.ticker);
-        trace!("Current claims: {:?}", claims);
         if let Some(claims) = claims {
             let allocations = split_lot(&claims, &lot);
-            trace!("Allocations: {:?}", allocations);
             self.delete_claims_from_allocations(&allocations);
             self.save_allocations(&allocations);
         }
@@ -124,7 +123,6 @@ impl OrderManager {
             AmountSpec::Shares(shares) => !shares.is_zero(),
             _ => unimplemented!(),
         });
-        trace!("Remaining claims: {:?}", self.unfilled_claims);
     }
 
     #[tracing::instrument(skip(self, allocations))]

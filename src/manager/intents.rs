@@ -5,36 +5,37 @@ use chrono::Utc;
 use num_traits::Signed;
 use position_intents::{AmountSpec, PositionIntent};
 use rust_decimal::prelude::*;
-use tracing::{debug, trace};
+use tracing::debug;
 use uuid::Uuid;
 
 impl OrderManager {
     #[tracing::instrument(skip(self, intent), fields(id = %intent.id))]
     pub(super) fn handle_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
-        trace!("Handling position intent: {:?}", intent);
+        debug!("Handling position intent");
         if let Some(dt) = intent.before {
             if dt >= Utc::now() {
                 // Intent has already expired, so don't do anything
-                debug!("Expired intent: {:?}", intent);
+                debug!("Expired intent");
                 return Ok(());
             }
         }
         if let Some(dt) = intent.after {
             if dt >= Utc::now() {
                 // Not ready to transmit intent yet
+                debug!("Sending intent to scheduler");
                 return self.schedule_position_intent(intent);
             }
         }
+        debug!("Transmitting intent");
         self.transmit_position_intent(intent)
     }
 
-    #[tracing::instrument(skip(self, intent), fields(id = %intent.id))]
+    #[tracing::instrument(skip(self, intent))]
     fn transmit_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
         let positions = self.get_positions(&intent.ticker);
-        trace!("Current position: {:?}", positions);
         match self.make_orders(&intent, &positions) {
             (None, None, None) => {
-                trace!("No trades generated");
+                debug!("No trades generated");
                 Ok(())
             }
             (Some(claim), Some(sent), None) => {
@@ -51,7 +52,7 @@ impl OrderManager {
         }
     }
 
-    #[tracing::instrument(skip(self, intent), fields(id = %intent.id))]
+    #[tracing::instrument(skip(self, intent))]
     fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
         self.scheduler_sender
             .send(intent)
@@ -61,7 +62,6 @@ impl OrderManager {
     #[tracing::instrument(skip(self))]
     fn get_positions(&self, ticker: &str) -> Vec<Position> {
         let mut allocations = self.allocations.clone();
-        trace!("Current allocations: {:?}", allocations);
         allocations.retain(|x| x.ticker == ticker);
         let mut by_owner: multimap::MultiMap<Owner, Allocation> = multimap::MultiMap::new();
         for allocation in allocations {
@@ -73,6 +73,7 @@ impl OrderManager {
             .collect()
     }
 
+    #[tracing::instrument(skip(self, intent, positions))]
     fn make_orders(
         &self,
         intent: &PositionIntent,
@@ -121,6 +122,7 @@ impl OrderManager {
             _ => unimplemented!(),
         };
         if diff_shares.is_zero() {
+            debug!("No trading needed");
             (None, None, None)
         } else {
             let claim = Claim::new(
@@ -159,6 +161,7 @@ impl OrderManager {
     }
 }
 
+#[tracing::instrument]
 fn make_order_intent(
     prefix: &str,
     ticker: &str,

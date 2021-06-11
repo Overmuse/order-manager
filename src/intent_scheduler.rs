@@ -3,7 +3,7 @@ use futures::stream::StreamExt;
 use position_intents::PositionIntent;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::time::delay_queue::DelayQueue;
-use tracing::{info, trace};
+use tracing::{debug, info};
 
 pub(super) struct IntentScheduler {
     scheduled_intents: DelayQueue<PositionIntent>,
@@ -30,13 +30,13 @@ impl IntentScheduler {
             tokio::select! {
                     intent = self.receiver.recv() => {
                         if let Some(intent) = intent {
-                            trace!("Intent received for scheduling: {:?}", intent);
+                            debug!("Intent received for scheduling");
                             self.schedule(intent)
                         }
                     },
                     intent = self.scheduled_intents.next(), if !self.scheduled_intents.is_empty() => {
                         if let Some(Ok(intent)) = intent {
-                            trace!("Scheduled intent triggered: {:?}", intent);
+                            debug!("Scheduled intent triggered");
                             self.sender.send(intent.into_inner()).unwrap()
                         }
                     }
@@ -50,7 +50,7 @@ impl IntentScheduler {
             .after
             .take() // We take the field so that there's no longer an `after` condition
             .expect("schedule_position_intent called with intent lacking `after` field");
-        trace!("Scheduling intent for {}", trigger_time);
+        debug!("Scheduling intent for {}", trigger_time);
         self.scheduled_intents
             .insert(intent, (trigger_time - Utc::now()).to_std().unwrap());
     }
