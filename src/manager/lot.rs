@@ -13,6 +13,7 @@ pub struct Lot {
 }
 
 impl Lot {
+    #[tracing::instrument]
     pub fn new(ticker: String, fill_time: DateTime<Utc>, price: Decimal, shares: Decimal) -> Self {
         Self {
             id: Uuid::new_v4(),

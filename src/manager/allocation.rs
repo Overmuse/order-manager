@@ -2,6 +2,7 @@ use super::Lot;
 use position_intents::AmountSpec;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use tracing::trace;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -19,7 +20,9 @@ pub(super) struct Claim {
 }
 
 impl Claim {
+    #[tracing::instrument]
     pub(super) fn new(strategy: String, sub_strategy: Option<String>, amount: AmountSpec) -> Self {
+        trace!("New Claim");
         Self {
             id: Uuid::new_v4(),
             strategy,
@@ -40,6 +43,7 @@ pub(super) struct Allocation {
 }
 
 impl Allocation {
+    #[tracing::instrument]
     pub(super) fn new(
         owner: Owner,
         claim_id: Option<Uuid>,
@@ -48,6 +52,7 @@ impl Allocation {
         shares: Decimal,
         basis: Decimal,
     ) -> Self {
+        trace!("New Allocation");
         Self {
             owner,
             claim_id,
@@ -59,7 +64,7 @@ impl Allocation {
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(claims, lot))]
 pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     let mut remaining_shares = lot.shares;
     let mut remaining_basis = lot.shares * lot.price;
@@ -117,7 +122,9 @@ pub(super) struct Position {
 }
 
 impl Position {
+    #[tracing::instrument]
     pub(super) fn new(owner: Owner, ticker: String, shares: Decimal, basis: Decimal) -> Self {
+        trace!("New Position");
         Self {
             owner,
             ticker,
@@ -126,6 +133,7 @@ impl Position {
         }
     }
 
+    #[tracing::instrument(skip(allocations))]
     pub(super) fn from_allocations(allocations: &[Allocation]) -> Self {
         let ticker = allocations[0].ticker.clone();
         let owner = allocations[0].owner.clone();

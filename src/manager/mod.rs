@@ -6,7 +6,7 @@ use position_intents::PositionIntent;
 use rdkafka::consumer::StreamConsumer;
 //use sqlx::postgres::PgPool;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tracing::{error, info, trace};
+use tracing::{error, info};
 
 mod allocation;
 //mod db;
@@ -54,7 +54,6 @@ impl OrderManager {
         info!("Starting OrderManager");
         loop {
             let message = self.receive_message().await;
-            trace!("Message received");
             if let Err(e) = self.handle_input(message).await {
                 //panic!("{:?}", e)
                 error!("{:?}", e)
