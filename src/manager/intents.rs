@@ -3,8 +3,9 @@ use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
-use position_intents::{AmountSpec, PositionIntent};
+use position_intents::{AmountSpec, PositionIntent, TickerSpec};
 use rust_decimal::prelude::*;
+use std::collections::HashSet;
 use tracing::debug;
 use uuid::Uuid;
 
@@ -32,23 +33,63 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self, intent))]
     fn transmit_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
-        let positions = self.get_positions(&intent.ticker);
-        match self.make_orders(&intent, &positions) {
-            (None, None, None) => {
-                debug!("No trades generated");
+        match &intent.ticker {
+            TickerSpec::Ticker(ticker) => {
+                let positions = self.get_positions(&ticker);
+                match self.make_orders(&intent, &ticker, &positions) {
+                    (None, None, None) => {
+                        debug!("No trades generated");
+                        Ok(())
+                    }
+                    (Some(claim), Some(sent), None) => {
+                        self.unfilled_claims.insert(ticker.clone(), claim);
+                        Ok(self.order_sender.send(sent)?)
+                    }
+                    (Some(claim), Some(sent), Some(saved)) => {
+                        self.dependent_orders
+                            .insert(sent.client_order_id.clone().unwrap(), saved);
+                        self.unfilled_claims.insert(ticker.clone(), claim);
+                        Ok(self.order_sender.send(sent)?)
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            TickerSpec::All => {
+                // TODO: Clean up this branch
+                let owned_tickers: HashSet<String> = self
+                    .allocations
+                    .iter()
+                    .filter_map(|alloc| {
+                        if alloc.owner
+                            == Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone())
+                        {
+                            Some(alloc.ticker.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                for ticker in owned_tickers {
+                    let positions = self.get_positions(&ticker);
+                    match self.make_orders(&intent, &ticker, &positions) {
+                        (None, None, None) => {
+                            debug!("No trades generated")
+                        }
+                        (Some(claim), Some(sent), None) => {
+                            self.unfilled_claims.insert(ticker, claim);
+                            self.order_sender.send(sent)?
+                        }
+                        (Some(claim), Some(sent), Some(saved)) => {
+                            self.dependent_orders
+                                .insert(sent.client_order_id.clone().unwrap(), saved);
+                            self.unfilled_claims.insert(ticker, claim);
+                            self.order_sender.send(sent)?
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 Ok(())
             }
-            (Some(claim), Some(sent), None) => {
-                self.unfilled_claims.insert(intent.ticker, claim);
-                Ok(self.order_sender.send(sent)?)
-            }
-            (Some(claim), Some(sent), Some(saved)) => {
-                self.dependent_orders
-                    .insert(sent.client_order_id.clone().unwrap(), saved);
-                self.unfilled_claims.insert(intent.ticker, claim);
-                Ok(self.order_sender.send(sent)?)
-            }
-            _ => unreachable!(),
         }
     }
 
@@ -77,6 +118,7 @@ impl OrderManager {
     fn make_orders(
         &self,
         intent: &PositionIntent,
+        ticker: &str,
         positions: &[Position],
     ) -> (Option<Claim>, Option<OrderIntent>, Option<OrderIntent>) {
         let (strategy_shares, total_shares) = positions.iter().fold(
@@ -134,7 +176,7 @@ impl OrderManager {
             if !signum_product.is_sign_negative() {
                 let trade = make_order_intent(
                     &intent.id.to_string(),
-                    &intent.ticker,
+                    &ticker,
                     diff_shares,
                     intent.limit_price,
                     intent.stop_price,
@@ -143,14 +185,14 @@ impl OrderManager {
             } else {
                 let sent = make_order_intent(
                     &intent.id.to_string(),
-                    &intent.ticker,
+                    &ticker,
                     -total_shares,
                     intent.limit_price,
                     intent.stop_price,
                 );
                 let saved = make_order_intent(
                     &intent.id.to_string(),
-                    &intent.ticker,
+                    &ticker,
                     diff_shares + total_shares,
                     intent.limit_price,
                     intent.stop_price,
