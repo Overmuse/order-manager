@@ -1,6 +1,6 @@
 use super::{split_lot, Allocation, Claim, Lot, OrderManager};
 use alpaca::{Event, OrderEvent, Side};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use position_intents::AmountSpec;
 use rust_decimal::prelude::*;
@@ -19,11 +19,20 @@ impl OrderManager {
         //self.upsert_order(&event.order).await?;
         //self.delete_pending_order_by_id(id.clone()).await?;
         match event.event {
+            Event::Canceled { .. } => {
+                debug!("Order cancelled");
+                self.pending_orders.remove(&event.order.client_order_id);
+            }
+            Event::Expired { .. } => {
+                debug!("Order expired");
+                self.pending_orders.remove(&event.order.client_order_id);
+            }
             Event::Fill {
                 price, timestamp, ..
             } => {
                 debug!("Fill");
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
+                self.pending_orders.remove(&event.order.client_order_id);
                 self.save_partially_filled_order_lot(id.clone(), new_lot.clone());
                 self.assign_lot(new_lot);
                 self.trigger_dependent_orders(&id)
@@ -33,6 +42,15 @@ impl OrderManager {
                 price, timestamp, ..
             } => {
                 debug!("Partial fill");
+                let pending_order = self
+                    .pending_orders
+                    .get_mut(&event.order.client_order_id)
+                    .ok_or_else(|| anyhow!("Partial fill received without seeing `new` event"))?;
+                let filled_qty = match event.order.side {
+                    Side::Buy => event.order.filled_qty.to_isize().unwrap(),
+                    Side::Sell => -(event.order.filled_qty.to_isize().unwrap()),
+                };
+                pending_order.pending_qty = pending_order.qty - filled_qty;
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
                 self.save_partially_filled_order_lot(id, new_lot.clone());
                 self.assign_lot(new_lot);
@@ -60,7 +78,7 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self))]
     fn previous_fill_data(&self, order_id: &str) -> (Decimal, Decimal) {
-        let previous_lots = self.partially_filled_orders.get_vec(order_id);
+        let previous_lots = self.partially_filled_lots.get_vec(order_id);
         previous_lots
             .map(|lots| {
                 lots.iter().fold(
@@ -78,7 +96,7 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self))]
     fn save_partially_filled_order_lot(&mut self, order_id: String, lot: Lot) {
-        self.partially_filled_orders.insert(order_id, lot);
+        self.partially_filled_lots.insert(order_id, lot);
     }
 
     #[tracing::instrument(skip(self))]

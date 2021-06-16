@@ -1,4 +1,4 @@
-use super::{Allocation, Claim, OrderManager, Owner, Position};
+use super::{Allocation, Claim, OrderManager, Owner, PendingOrder, Position};
 use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -76,13 +76,37 @@ impl OrderManager {
                             debug!("No trades generated")
                         }
                         (Some(claim), Some(sent), None) => {
-                            self.unfilled_claims.insert(ticker, claim);
+                            self.unfilled_claims.insert(ticker.clone(), claim);
+                            let qty = match sent.side {
+                                Side::Buy => sent.qty.to_isize().unwrap(),
+                                Side::Sell => -(sent.qty.to_isize().unwrap()),
+                            };
+                            self.pending_orders.insert(
+                                sent.client_order_id.clone().unwrap(),
+                                PendingOrder::new(
+                                    sent.client_order_id.clone().unwrap(),
+                                    ticker,
+                                    qty,
+                                ),
+                            );
                             self.order_sender.send(sent)?
                         }
                         (Some(claim), Some(sent), Some(saved)) => {
+                            let qty = match sent.side {
+                                Side::Buy => sent.qty.to_isize().unwrap(),
+                                Side::Sell => -(sent.qty.to_isize().unwrap()),
+                            };
                             self.dependent_orders
                                 .insert(sent.client_order_id.clone().unwrap(), saved);
-                            self.unfilled_claims.insert(ticker, claim);
+                            self.unfilled_claims.insert(ticker.clone(), claim);
+                            self.pending_orders.insert(
+                                sent.client_order_id.clone().unwrap(),
+                                PendingOrder::new(
+                                    sent.client_order_id.clone().unwrap(),
+                                    ticker,
+                                    qty,
+                                ),
+                            );
                             self.order_sender.send(sent)?
                         }
                         _ => unreachable!(),
@@ -133,6 +157,18 @@ impl OrderManager {
                 }
             },
         );
+        let pending_shares: Decimal = self
+            .pending_orders
+            .values()
+            .filter_map(|pending_order| {
+                if pending_order.ticker == ticker {
+                    Some(pending_order.pending_qty)
+                } else {
+                    None
+                }
+            })
+            .sum::<isize>()
+            .into();
 
         let diff_shares = match intent.amount {
             AmountSpec::Dollars(dollars) => {
@@ -172,7 +208,8 @@ impl OrderManager {
                 intent.sub_strategy.clone(),
                 AmountSpec::Shares(diff_shares),
             );
-            let signum_product = total_shares.signum() * (diff_shares + total_shares).signum();
+            let signum_product = (total_shares + pending_shares).signum()
+                * (diff_shares + total_shares + pending_shares).signum();
             if !signum_product.is_sign_negative() {
                 let trade = make_order_intent(
                     &intent.id.to_string(),
@@ -186,14 +223,14 @@ impl OrderManager {
                 let sent = make_order_intent(
                     &intent.id.to_string(),
                     &ticker,
-                    -total_shares,
+                    -(total_shares + pending_shares),
                     intent.limit_price,
                     intent.stop_price,
                 );
                 let saved = make_order_intent(
                     &intent.id.to_string(),
                     &ticker,
-                    diff_shares + total_shares,
+                    diff_shares + total_shares + pending_shares,
                     intent.limit_price,
                     intent.stop_price,
                 );
