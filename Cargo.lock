@@ -1004,7 +1004,7 @@ dependencies = [
 
 [[package]]
 name = "order-manager"
-version = "3.1.1"
+version = "4.0.0"
 dependencies = [
  "alpaca",
  "anyhow",
@@ -1100,8 +1100,8 @@ checksum = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c"
 
 [[package]]
 name = "position-intents"
-version = "0.5.0"
-source = "git+ssh://git@github.com/Overmuse/position-intents.git?tag=v0.5.0#8d25f7f0d234409a4cb2ebadf4a72869b14c9cb3"
+version = "0.6.0"
+source = "git+ssh://git@github.com/Overmuse/position-intents.git?tag=v0.6.0#7296eaaeb8d4ed3da04df507ef1efc1cee8425df"
 dependencies = [
  "chrono",
  "rust_decimal",
