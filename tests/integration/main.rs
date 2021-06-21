@@ -3,7 +3,7 @@ use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
 use futures::FutureExt;
 use order_manager::{run, Settings};
-use position_intents::{AmountSpec, PositionIntent, TickerSpec};
+use position_intents::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
@@ -214,7 +214,8 @@ async fn main() -> Result<()> {
     info!("Test 7");
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::RetainLong)
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::Zero)
+            .update_policy(UpdatePolicy::RetainLong)
             .build()
             .unwrap(),
     )
@@ -223,7 +224,8 @@ async fn main() -> Result<()> {
     assert!(consumer.recv().now_or_never().is_none());
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::Retain)
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::Zero)
+            .update_policy(UpdatePolicy::Retain)
             .build()
             .unwrap(),
     )
@@ -232,7 +234,8 @@ async fn main() -> Result<()> {
     assert!(consumer.recv().now_or_never().is_none());
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::RetainShort)
+        &PositionIntent::builder("S2", "AAPL", AmountSpec::Zero)
+            .update_policy(UpdatePolicy::RetainShort)
             .build()
             .unwrap(),
     )

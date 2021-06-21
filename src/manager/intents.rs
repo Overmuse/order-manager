@@ -3,7 +3,7 @@ use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
-use position_intents::{AmountSpec, PositionIntent, TickerSpec};
+use position_intents::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use rust_decimal::prelude::*;
 use std::collections::HashSet;
 use tracing::debug;
@@ -170,6 +170,26 @@ impl OrderManager {
             .sum::<isize>()
             .into();
 
+        match intent.update_policy {
+            UpdatePolicy::Retain => {
+                debug!("No trading needed");
+                return (None, None, None);
+            }
+            UpdatePolicy::RetainLong => {
+                if strategy_shares.is_sign_positive() {
+                    debug!("No trading needed");
+                    return (None, None, None);
+                }
+            }
+            UpdatePolicy::RetainShort => {
+                if strategy_shares.is_sign_negative() {
+                    debug!("No trading needed");
+                    return (None, None, None);
+                }
+            }
+            _ => (),
+        };
+
         let diff_shares = match intent.amount {
             AmountSpec::Dollars(dollars) => {
                 // TODO: fix the below so we can always have a price
@@ -182,21 +202,6 @@ impl OrderManager {
             }
             AmountSpec::Shares(shares) => shares - strategy_shares,
             AmountSpec::Zero => -strategy_shares,
-            AmountSpec::Retain => Decimal::ZERO,
-            AmountSpec::RetainLong => {
-                if strategy_shares.is_sign_positive() {
-                    Decimal::ZERO
-                } else {
-                    -strategy_shares
-                }
-            }
-            AmountSpec::RetainShort => {
-                if strategy_shares.is_sign_negative() {
-                    Decimal::ZERO
-                } else {
-                    -strategy_shares
-                }
-            }
             _ => unimplemented!(),
         };
         if diff_shares.is_zero() {
