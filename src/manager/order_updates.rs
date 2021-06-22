@@ -103,7 +103,7 @@ impl OrderManager {
     fn assign_lot(&mut self, lot: Lot) {
         let claims = self.get_claims(&lot.ticker);
         if let Some(claims) = claims {
-            let allocations = split_lot(&claims, &lot);
+            let allocations = split_lot(claims, &lot);
             self.delete_claims_from_allocations(&allocations);
             self.save_allocations(&allocations);
         }
