@@ -12,21 +12,28 @@ pub(super) enum Owner {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct Claim {
-    pub id: Uuid,
+pub(crate) struct Claim {
+    pub id: String,
     pub strategy: String,
     pub sub_strategy: Option<String>,
+    pub ticker: String,
     pub amount: AmountSpec,
 }
 
 impl Claim {
     #[tracing::instrument]
-    pub(super) fn new(strategy: String, sub_strategy: Option<String>, amount: AmountSpec) -> Self {
+    pub(super) fn new(
+        strategy: String,
+        sub_strategy: Option<String>,
+        ticker: String,
+        amount: AmountSpec,
+    ) -> Self {
         trace!("New Claim");
         Self {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().to_string(),
             strategy,
             sub_strategy,
+            ticker,
             amount,
         }
     }
@@ -35,7 +42,7 @@ impl Claim {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(super) struct Allocation {
     pub owner: Owner,
-    pub claim_id: Option<Uuid>,
+    pub claim_id: Option<String>,
     pub lot_id: Uuid,
     pub ticker: String,
     pub shares: Decimal,
@@ -46,7 +53,7 @@ impl Allocation {
     #[tracing::instrument]
     pub(super) fn new(
         owner: Owner,
-        claim_id: Option<Uuid>,
+        claim_id: Option<String>,
         lot_id: Uuid,
         ticker: String,
         shares: Decimal,
@@ -90,7 +97,7 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
         };
         out.push(Allocation::new(
             Owner::Strategy(claim.strategy.clone(), claim.sub_strategy.clone()),
-            Some(claim.id),
+            Some(claim.id.clone()),
             lot.id,
             lot.ticker.clone(),
             shares,
@@ -167,10 +174,16 @@ mod test {
             Decimal::new(10, 0),
         );
         let claims = vec![
-            Claim::new("A".into(), None, AmountSpec::Dollars(Decimal::new(400, 0))),
+            Claim::new(
+                "A".into(),
+                None,
+                "AAPL".into(),
+                AmountSpec::Dollars(Decimal::new(400, 0)),
+            ),
             Claim::new(
                 "B".into(),
                 Some("B2".into()),
+                "AAPL".into(),
                 AmountSpec::Shares(Decimal::new(25, 1)),
             ),
         ];
@@ -180,7 +193,7 @@ mod test {
             allocations[0],
             Allocation::new(
                 Owner::Strategy("A".into(), None),
-                Some(claims[0].id),
+                Some(claims[0].id.clone()),
                 lot.id,
                 "AAPL".into(),
                 Decimal::new(4, 0),
@@ -191,7 +204,7 @@ mod test {
             allocations[1],
             Allocation::new(
                 Owner::Strategy("B".into(), Some("B2".into())),
-                Some(claims[1].id),
+                Some(claims[1].id.clone()),
                 lot.id,
                 "AAPL".into(),
                 Decimal::new(25, 1),

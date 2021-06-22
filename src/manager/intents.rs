@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 impl OrderManager {
     #[tracing::instrument(skip(self, intent), fields(id = %intent.id))]
-    pub(super) fn handle_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
+    pub(super) async fn handle_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
         debug!("Handling position intent");
         if let Some(dt) = intent.before {
             if dt <= Utc::now() {
@@ -28,11 +28,11 @@ impl OrderManager {
             }
         }
         debug!("Transmitting intent");
-        self.transmit_position_intent(intent)
+        self.transmit_position_intent(intent).await
     }
 
     #[tracing::instrument(skip(self, intent))]
-    fn transmit_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
+    async fn transmit_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
         match &intent.ticker {
             TickerSpec::Ticker(ticker) => {
                 let positions = self.get_positions(ticker);
@@ -42,13 +42,13 @@ impl OrderManager {
                         Ok(())
                     }
                     (Some(claim), Some(sent), None) => {
-                        self.unfilled_claims.insert(ticker.clone(), claim);
+                        self.save_claim(claim).await?;
                         Ok(self.order_sender.send(sent)?)
                     }
                     (Some(claim), Some(sent), Some(saved)) => {
                         self.dependent_orders
                             .insert(sent.client_order_id.clone().unwrap(), saved);
-                        self.unfilled_claims.insert(ticker.clone(), claim);
+                        self.save_claim(claim).await?;
                         Ok(self.order_sender.send(sent)?)
                     }
                     _ => unreachable!(),
@@ -76,7 +76,7 @@ impl OrderManager {
                             debug!("No trades generated")
                         }
                         (Some(claim), Some(sent), None) => {
-                            self.unfilled_claims.insert(ticker.clone(), claim);
+                            self.save_claim(claim).await?;
                             let qty = match sent.side {
                                 Side::Buy => sent.qty.to_isize().unwrap(),
                                 Side::Sell => -(sent.qty.to_isize().unwrap()),
@@ -94,7 +94,7 @@ impl OrderManager {
                             };
                             self.dependent_orders
                                 .insert(sent.client_order_id.clone().unwrap(), saved);
-                            self.unfilled_claims.insert(ticker.clone(), claim);
+                            self.save_claim(claim).await?;
                             self.pending_orders.insert(
                                 sent.client_order_id.clone().unwrap(),
                                 PendingOrder::new(ticker, qty),
@@ -203,6 +203,7 @@ impl OrderManager {
             let claim = Claim::new(
                 intent.strategy.clone(),
                 intent.sub_strategy.clone(),
+                ticker.to_string(),
                 AmountSpec::Shares(diff_shares),
             );
             let signum_product = (total_shares + pending_shares).signum()

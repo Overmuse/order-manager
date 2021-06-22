@@ -9,6 +9,8 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
 use rust_decimal::Decimal;
 use tracing::{debug, info};
+use tracing_log::LogTracer;
+use uuid::Uuid;
 
 use order_events::send_order_event;
 use setup::setup;
@@ -44,7 +46,10 @@ async fn receive_oi(consumer: &StreamConsumer) -> Result<OrderIntent> {
 
 #[tokio::test]
 async fn main() -> Result<()> {
-    let (admin, admin_options, consumer, producer) = setup().await;
+    //LogTracer::init()?;
+    let database_address = "postgres://postgres:password@localhost:5432";
+    let database_name = Uuid::new_v4().to_string();
+    let (admin, admin_options, consumer, producer) = setup(database_address, &database_name).await;
     debug!("Subscribing to topics");
     consumer.subscribe(&[&"order-intents"]).unwrap();
     consumer
@@ -53,21 +58,20 @@ async fn main() -> Result<()> {
         .set_all_offsets(rdkafka::topic_partition_list::Offset::End)
         .unwrap();
 
-    tokio::spawn(async {
-        std::env::set_var("DATABASE__NAME", "order-manager");
-        std::env::set_var(
-            "DATABASE__URL",
-            "postgres://postgres:password@localhost:5432/order-manager",
-        );
+    tokio::spawn(async move {
+        std::env::set_var("DATABASE__NAME", database_name);
+        std::env::set_var("DATABASE__URL", database_address);
         std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
-        std::env::set_var("KAFKA__GROUP_ID", "order-manager");
+        std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
         std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVERS", "localhost:9094");
         std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
         std::env::set_var("KAFKA__ACKS", "0");
         std::env::set_var("KAFKA__RETRIES", "0");
         let settings = Settings::new();
-        run(settings.unwrap()).await
+        tracing::debug!("{:?}", settings);
+        let res = run(settings.unwrap()).await;
+        tracing::error!("{:?}", res);
     });
     //
     // TODO: Replace this sleep with a liveness check

@@ -4,13 +4,13 @@ use anyhow::{Context, Result};
 use multimap::MultiMap;
 use position_intents::PositionIntent;
 use rdkafka::consumer::StreamConsumer;
-//use sqlx::postgres::PgPool;
+use sqlx::postgres::PgPool;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{error, info};
 
 mod allocation;
-//mod db;
+mod db;
 mod dependent_orders;
 mod input;
 mod intents;
@@ -30,8 +30,8 @@ pub struct OrderManager {
     pending_orders: HashMap<String, PendingOrder>,
     partially_filled_lots: MultiMap<String, Lot>,
     dependent_orders: MultiMap<String, OrderIntent>,
-    unfilled_claims: MultiMap<String, Claim>,
-    allocations: Vec<Allocation>, //pool: PgPool,
+    allocations: Vec<Allocation>,
+    pool: PgPool,
 }
 
 impl OrderManager {
@@ -40,7 +40,7 @@ impl OrderManager {
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
         order_sender: UnboundedSender<OrderIntent>,
-        //pool: PgPool,
+        pool: PgPool,
     ) -> Self {
         Self {
             kafka_consumer,
@@ -50,8 +50,8 @@ impl OrderManager {
             pending_orders: HashMap::new(),
             partially_filled_lots: MultiMap::new(),
             dependent_orders: MultiMap::new(),
-            unfilled_claims: MultiMap::new(),
-            allocations: Vec::new(), //pool,
+            allocations: Vec::new(),
+            pool,
         }
     }
 
@@ -70,6 +70,7 @@ impl OrderManager {
         match input {
             Ok(Input::PositionIntent(intent)) => self
                 .handle_position_intent(intent)
+                .await
                 .context("Failed to handle PositionIntent")?,
             Ok(Input::AlpacaMessage(AlpacaMessage::TradeUpdates(oe))) => self
                 .handle_order_update(oe)

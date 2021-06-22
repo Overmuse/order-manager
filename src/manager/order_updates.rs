@@ -1,4 +1,4 @@
-use super::{split_lot, Allocation, Claim, Lot, OrderManager};
+use super::{split_lot, Allocation, Lot, OrderManager};
 use alpaca::{Event, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -34,7 +34,7 @@ impl OrderManager {
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
                 self.pending_orders.remove(&event.order.client_order_id);
                 self.save_partially_filled_order_lot(id.clone(), new_lot.clone());
-                self.assign_lot(new_lot);
+                self.assign_lot(new_lot).await?;
                 self.trigger_dependent_orders(&id)
                     .context("Failed to trigger dependent-orders")?
             }
@@ -53,7 +53,7 @@ impl OrderManager {
                 pending_order.pending_qty = pending_order.qty - filled_qty;
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
                 self.save_partially_filled_order_lot(id, new_lot.clone());
-                self.assign_lot(new_lot);
+                self.assign_lot(new_lot).await?;
             }
             _ => (),
         }
@@ -100,47 +100,54 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self))]
-    fn assign_lot(&mut self, lot: Lot) {
-        let claims = self.get_claims(&lot.ticker);
-        if let Some(claims) = claims {
-            let allocations = split_lot(claims, &lot);
-            self.delete_claims_from_allocations(&allocations);
+    async fn assign_lot(&mut self, lot: Lot) -> Result<()> {
+        let claims = self.get_claims_by_ticker(&lot.ticker).await?;
+        debug!("CLAIMS: {:?}", claims);
+        if !claims.is_empty() {
+            let allocations = split_lot(&claims, &lot);
+            self.delete_claims_from_allocations(&lot.ticker, &allocations)
+                .await?;
             self.save_allocations(&allocations);
         }
-    }
-
-    #[tracing::instrument(skip(self))]
-    fn get_claims(&self, ticker: &str) -> Option<&Vec<Claim>> {
-        self.unfilled_claims.get_vec(ticker)
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, allocations))]
-    fn delete_claims_from_allocations(&mut self, allocations: &[Allocation]) {
+    async fn delete_claims_from_allocations(
+        &mut self,
+        ticker: &str,
+        allocations: &[Allocation],
+    ) -> Result<()> {
+        let mut claims = self.get_claims_by_ticker(ticker).await?;
         for allocation in allocations {
-            let claims = self.unfilled_claims.get_vec_mut(&allocation.ticker);
-            if let Some(claims) = claims {
-                for claim in claims {
-                    if allocation.claim_id == Some(claim.id) {
-                        match claim.amount {
-                            AmountSpec::Dollars(dollars) => {
-                                let new_dollars = dollars - allocation.basis;
-                                claim.amount = AmountSpec::Dollars(new_dollars);
-                            }
-                            AmountSpec::Shares(shares) => {
-                                let new_shares = shares - allocation.shares;
-                                claim.amount = AmountSpec::Shares(new_shares);
-                            }
-                            _ => unimplemented!(),
+            for mut claim in claims.iter_mut() {
+                if allocation.claim_id.clone().map(|x| x.to_string()) == Some(claim.id.clone()) {
+                    match claim.amount {
+                        AmountSpec::Dollars(dollars) => {
+                            let new_dollars = dollars - allocation.basis;
+                            claim.amount = AmountSpec::Dollars(new_dollars);
                         }
+                        AmountSpec::Shares(shares) => {
+                            let new_shares = shares - allocation.shares;
+                            claim.amount = AmountSpec::Shares(new_shares);
+                        }
+                        _ => unimplemented!(),
                     }
                 }
             }
         }
-        self.unfilled_claims.retain(|_, claim| match claim.amount {
-            AmountSpec::Dollars(dollars) => !dollars.is_zero(),
-            AmountSpec::Shares(shares) => !shares.is_zero(),
-            _ => unimplemented!(),
-        });
+        for claim in claims {
+            let should_delete = match claim.amount {
+                AmountSpec::Dollars(dollars) => dollars.is_zero(),
+                AmountSpec::Shares(shares) => shares.is_zero(),
+                _ => unimplemented!(),
+            };
+            if should_delete {
+                self.delete_claim_by_id(claim.id).await?
+            }
+        }
+
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, allocations))]

@@ -1,4 +1,4 @@
-use super::super::OrderManager;
+use crate::OrderManager;
 use alpaca::{Order, OrderType};
 use anyhow::Result;
 use rust_decimal::prelude::*;
