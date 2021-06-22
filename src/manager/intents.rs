@@ -35,8 +35,8 @@ impl OrderManager {
     fn transmit_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
         match &intent.ticker {
             TickerSpec::Ticker(ticker) => {
-                let positions = self.get_positions(&ticker);
-                match self.make_orders(&intent, &ticker, &positions) {
+                let positions = self.get_positions(ticker);
+                match self.make_orders(&intent, ticker, &positions) {
                     (None, None, None) => {
                         debug!("No trades generated");
                         Ok(())
@@ -83,11 +83,7 @@ impl OrderManager {
                             };
                             self.pending_orders.insert(
                                 sent.client_order_id.clone().unwrap(),
-                                PendingOrder::new(
-                                    sent.client_order_id.clone().unwrap(),
-                                    ticker,
-                                    qty,
-                                ),
+                                PendingOrder::new(ticker, qty),
                             );
                             self.order_sender.send(sent)?
                         }
@@ -101,11 +97,7 @@ impl OrderManager {
                             self.unfilled_claims.insert(ticker.clone(), claim);
                             self.pending_orders.insert(
                                 sent.client_order_id.clone().unwrap(),
-                                PendingOrder::new(
-                                    sent.client_order_id.clone().unwrap(),
-                                    ticker,
-                                    qty,
-                                ),
+                                PendingOrder::new(ticker, qty),
                             );
                             self.order_sender.send(sent)?
                         }
@@ -176,13 +168,13 @@ impl OrderManager {
                 return (None, None, None);
             }
             UpdatePolicy::RetainLong => {
-                if strategy_shares.is_sign_positive() {
+                if strategy_shares > Decimal::ZERO {
                     debug!("No trading needed");
                     return (None, None, None);
                 }
             }
             UpdatePolicy::RetainShort => {
-                if strategy_shares.is_sign_negative() {
+                if strategy_shares < Decimal::ZERO {
                     debug!("No trading needed");
                     return (None, None, None);
                 }
@@ -218,7 +210,7 @@ impl OrderManager {
             if !signum_product.is_sign_negative() {
                 let trade = make_order_intent(
                     &intent.id.to_string(),
-                    &ticker,
+                    ticker,
                     diff_shares,
                     intent.limit_price,
                     intent.stop_price,
@@ -227,14 +219,14 @@ impl OrderManager {
             } else {
                 let sent = make_order_intent(
                     &intent.id.to_string(),
-                    &ticker,
+                    ticker,
                     -(total_shares + pending_shares),
                     intent.limit_price,
                     intent.stop_price,
                 );
                 let saved = make_order_intent(
                     &intent.id.to_string(),
-                    &ticker,
+                    ticker,
                     diff_shares + total_shares + pending_shares,
                     intent.limit_price,
                     intent.stop_price,
