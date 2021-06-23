@@ -1,4 +1,4 @@
--- Add migration script here
+-- migrate:up
 CREATE TABLE IF NOT EXISTS dependent_orders 
 (
     dependent_id    TEXT    NOT NULL,
@@ -13,3 +13,7 @@ CREATE TABLE IF NOT EXISTS dependent_orders
     client_order_id TEXT,
     order_class     TEXT    NOT NULL
 )
+
+-- migrate:down
+DROP TABLE IF EXISTS dependent_orders;
+

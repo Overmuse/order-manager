@@ -5,8 +5,6 @@ use rdkafka::{
     producer::FutureProducer,
     ClientConfig,
 };
-use sqlx::postgres::{PgConnection, PgPool};
-use sqlx::{Connection, Executor};
 use tracing::{debug, subscriber::set_global_default};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
@@ -56,22 +54,16 @@ pub async fn setup(
         .unwrap();
 
     debug!("Creating database");
-    let mut connection = PgConnection::connect(database_address)
-        .await
-        .expect("Failed to connect to Postgres");
-    connection
-        .execute(&*format!(r#"CREATE DATABASE "{}";"#, database_name))
-        .await
-        .expect("Failed to create database.");
-
-    debug!("Migrating database");
-    let connection_pool = PgPool::connect(&format!("{}/{}", database_address, database_name))
-        .await
-        .expect("Failed to connect to Postgres.");
-    sqlx::migrate!("./migrations")
-        .run(&connection_pool)
-        .await
-        .expect("Failed to migrate the database");
+    std::process::Command::new("dbmate")
+        .arg("--wait")
+        .arg("--url")
+        .arg(format!(
+            "{}/{}?sslmode=disable",
+            database_address, database_name
+        ))
+        .arg("up")
+        .output()
+        .unwrap();
 
     (admin, admin_options, consumer, producer)
 }

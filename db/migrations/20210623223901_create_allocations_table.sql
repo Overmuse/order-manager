@@ -1,4 +1,4 @@
--- Add migration script here
+-- migrate:up
 CREATE TABLE IF NOT EXISTS allocations
 (
     owner     TEXT NOT NULL,
@@ -9,3 +9,7 @@ CREATE TABLE IF NOT EXISTS allocations
     shares    NUMERIC NOT NULL,
     basis     NUMERIC NOT NULL
 )
+
+-- migrate:down
+DROP TABLE IF EXISTS allocations;
+
