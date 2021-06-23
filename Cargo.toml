@@ -14,7 +14,6 @@ config = "0.10.1"
 dotenv = "0.15.0"
 futures = "0.3.15"
 kafka-settings = {git = "ssh://git@github.com/Overmuse/kafka-settings.git", tag = "v0.3.1" }
-multimap = "0.8.3"
 num-traits = "0.2.14"
 position-intents = {git = "ssh://git@github.com/Overmuse/position-intents.git", tag = "v0.6.0" }
 rdkafka = { version = "0.26.0", features = ["ssl-vendored"] }

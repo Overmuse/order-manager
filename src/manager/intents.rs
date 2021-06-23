@@ -1,4 +1,4 @@
-use super::{Allocation, Claim, OrderManager, Owner, PendingOrder, Position};
+use super::{Claim, OrderManager, Owner, PendingOrder, Position};
 use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -35,7 +35,7 @@ impl OrderManager {
     async fn transmit_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
         match &intent.ticker {
             TickerSpec::Ticker(ticker) => {
-                let positions = self.get_positions(&ticker).await?;
+                let positions = self.get_positions_by_ticker(&ticker).await?;
                 match self.make_orders(&intent, &ticker, &positions).await? {
                     (None, None, None) => {
                         debug!("No trades generated");
@@ -92,7 +92,7 @@ impl OrderManager {
                     })
                     .collect();
                 for ticker in owned_tickers {
-                    let positions = self.get_positions(&ticker).await?;
+                    let positions = self.get_positions_by_ticker(&ticker).await?;
                     match self.make_orders(&intent, &ticker, &positions).await? {
                         (None, None, None) => {
                             debug!("No trades generated")
@@ -143,20 +143,6 @@ impl OrderManager {
         self.scheduler_sender
             .send(intent)
             .context("Failed to send intent to scheduler")
-    }
-
-    #[tracing::instrument(skip(self))]
-    async fn get_positions(&self, ticker: &str) -> Result<Vec<Position>> {
-        let mut allocations = self.get_allocations().await?;
-        allocations.retain(|x| x.ticker == ticker);
-        let mut by_owner: multimap::MultiMap<Owner, Allocation> = multimap::MultiMap::new();
-        for allocation in allocations {
-            by_owner.insert(allocation.owner.clone(), allocation)
-        }
-        Ok(by_owner
-            .iter_all()
-            .map(|(_, allocs)| Position::from_allocations(allocs))
-            .collect())
     }
 
     #[tracing::instrument(skip(self, intent, positions))]

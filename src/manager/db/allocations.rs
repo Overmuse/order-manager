@@ -1,4 +1,4 @@
-use crate::manager::{Allocation, OrderManager, Owner};
+use crate::manager::{Allocation, OrderManager, Owner, Position};
 use anyhow::Result;
 use tracing::trace;
 
@@ -23,6 +23,27 @@ impl OrderManager {
                     row.try_get(4)?,
                     row.try_get(5)?,
                     row.try_get(6)?,
+                ))
+            })
+            .collect()
+    }
+
+    pub(crate) async fn get_positions_by_ticker(&self, ticker: &str) -> Result<Vec<Position>> {
+        self.db_client
+            .query("SELECT owner, sub_owner, ticker, sum(shares), sum(basis) FROM allocations WHERE ticker = $1 GROUP BY owner, sub_owner, ticker", &[&ticker])
+            .await?
+            .into_iter()
+            .map(|row| -> Result<Position> {
+                let owner = if row.try_get::<usize, &str>(0)? == "House" {
+                    Owner::House
+                } else {
+                    Owner::Strategy(row.try_get(0)?, row.try_get(1)?)
+                };
+                Ok(Position::new(
+                    owner,
+                    row.try_get(2)?,
+                    row.try_get(3)?,
+                    row.try_get(4)?,
                 ))
             })
             .collect()

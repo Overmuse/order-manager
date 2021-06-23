@@ -127,7 +127,7 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(super) struct Position {
+pub(crate) struct Position {
     pub owner: Owner,
     pub ticker: String,
     pub shares: Decimal,
