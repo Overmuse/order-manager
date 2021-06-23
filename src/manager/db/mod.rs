@@ -1,5 +1,5 @@
 mod allocations;
 mod claims;
+mod dependent_orders;
 mod lots;
-//mod orders;
-//mod pending_orders;
+mod pending_orders;

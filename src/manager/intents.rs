@@ -36,19 +36,40 @@ impl OrderManager {
         match &intent.ticker {
             TickerSpec::Ticker(ticker) => {
                 let positions = self.get_positions(&ticker).await?;
-                match self.make_orders(&intent, &ticker, &positions) {
+                match self.make_orders(&intent, &ticker, &positions).await? {
                     (None, None, None) => {
                         debug!("No trades generated");
                         Ok(())
                     }
                     (Some(claim), Some(sent), None) => {
                         self.save_claim(claim).await?;
+                        let qty = match sent.side {
+                            Side::Buy => sent.qty.to_isize().unwrap(),
+                            Side::Sell => -(sent.qty.to_isize().unwrap()),
+                        };
+                        self.save_pending_order(PendingOrder::new(
+                            sent.client_order_id.clone().unwrap(),
+                            ticker.clone(),
+                            qty as i32,
+                        ))
+                        .await?;
                         Ok(self.order_sender.send(sent)?)
                     }
                     (Some(claim), Some(sent), Some(saved)) => {
-                        self.dependent_orders
-                            .insert(sent.client_order_id.clone().unwrap(), saved);
+                        debug!("Saving dependent order");
+                        self.save_dependent_order(&sent.client_order_id.clone().unwrap(), saved)
+                            .await?;
                         self.save_claim(claim).await?;
+                        let qty = match sent.side {
+                            Side::Buy => sent.qty.to_isize().unwrap(),
+                            Side::Sell => -(sent.qty.to_isize().unwrap()),
+                        };
+                        self.save_pending_order(PendingOrder::new(
+                            sent.client_order_id.clone().unwrap(),
+                            ticker.clone(),
+                            qty as i32,
+                        ))
+                        .await?;
                         Ok(self.order_sender.send(sent)?)
                     }
                     _ => unreachable!(),
@@ -72,7 +93,7 @@ impl OrderManager {
                     .collect();
                 for ticker in owned_tickers {
                     let positions = self.get_positions(&ticker).await?;
-                    match self.make_orders(&intent, &ticker, &positions) {
+                    match self.make_orders(&intent, &ticker, &positions).await? {
                         (None, None, None) => {
                             debug!("No trades generated")
                         }
@@ -82,10 +103,12 @@ impl OrderManager {
                                 Side::Buy => sent.qty.to_isize().unwrap(),
                                 Side::Sell => -(sent.qty.to_isize().unwrap()),
                             };
-                            self.pending_orders.insert(
+                            self.save_pending_order(PendingOrder::new(
                                 sent.client_order_id.clone().unwrap(),
-                                PendingOrder::new(ticker, qty),
-                            );
+                                ticker,
+                                qty as i32,
+                            ))
+                            .await?;
                             self.order_sender.send(sent)?
                         }
                         (Some(claim), Some(sent), Some(saved)) => {
@@ -93,13 +116,18 @@ impl OrderManager {
                                 Side::Buy => sent.qty.to_isize().unwrap(),
                                 Side::Sell => -(sent.qty.to_isize().unwrap()),
                             };
-                            self.dependent_orders
-                                .insert(sent.client_order_id.clone().unwrap(), saved);
+                            self.save_dependent_order(
+                                &sent.client_order_id.clone().unwrap(),
+                                saved,
+                            )
+                            .await?;
                             self.save_claim(claim).await?;
-                            self.pending_orders.insert(
+                            self.save_pending_order(PendingOrder::new(
                                 sent.client_order_id.clone().unwrap(),
-                                PendingOrder::new(ticker, qty),
-                            );
+                                ticker,
+                                qty as i32,
+                            ))
+                            .await?;
                             self.order_sender.send(sent)?
                         }
                         _ => unreachable!(),
@@ -132,12 +160,12 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent, positions))]
-    fn make_orders(
+    async fn make_orders(
         &self,
         intent: &PositionIntent,
         ticker: &str,
         positions: &[Position],
-    ) -> (Option<Claim>, Option<OrderIntent>, Option<OrderIntent>) {
+    ) -> Result<(Option<Claim>, Option<OrderIntent>, Option<OrderIntent>)> {
         let (strategy_shares, total_shares) = positions.iter().fold(
             (Decimal::ZERO, Decimal::ZERO),
             |(strat_shares, all_shares), pos| {
@@ -151,8 +179,9 @@ impl OrderManager {
             },
         );
         let pending_shares: Decimal = self
-            .pending_orders
-            .values()
+            .get_pending_orders()
+            .await?
+            .iter()
             .filter_map(|pending_order| {
                 if pending_order.ticker == ticker {
                     Some(pending_order.pending_qty)
@@ -160,13 +189,13 @@ impl OrderManager {
                     None
                 }
             })
-            .sum::<isize>()
+            .sum::<i32>()
             .into();
 
         match intent.update_policy {
             UpdatePolicy::Retain => {
                 debug!("UpdatePolicy::Retain: No trading needed");
-                return (None, None, None);
+                return Ok((None, None, None));
             }
             UpdatePolicy::RetainLong => {
                 if strategy_shares > Decimal::ZERO {
@@ -174,7 +203,7 @@ impl OrderManager {
                         "UpdatePolicy::RetainLong and position {}: No trading needed",
                         strategy_shares
                     );
-                    return (None, None, None);
+                    return Ok((None, None, None));
                 }
             }
             UpdatePolicy::RetainShort => {
@@ -183,7 +212,7 @@ impl OrderManager {
                         "UpdatePolicy::RetainShort and position {}: No trading needed",
                         strategy_shares
                     );
-                    return (None, None, None);
+                    return Ok((None, None, None));
                 }
             }
             _ => (),
@@ -205,7 +234,7 @@ impl OrderManager {
         };
         if diff_shares.is_zero() {
             debug!("No change in shares: No trading needed");
-            (None, None, None)
+            Ok((None, None, None))
         } else {
             let claim = Claim::new(
                 intent.strategy.clone(),
@@ -223,7 +252,7 @@ impl OrderManager {
                     intent.limit_price,
                     intent.stop_price,
                 );
-                (Some(claim), Some(trade), None)
+                Ok((Some(claim), Some(trade), None))
             } else {
                 let sent = make_order_intent(
                     &intent.id.to_string(),
@@ -239,7 +268,7 @@ impl OrderManager {
                     intent.limit_price,
                     intent.stop_price,
                 );
-                (Some(claim), Some(sent), Some(saved))
+                Ok((Some(claim), Some(sent), Some(saved)))
             }
         }
     }

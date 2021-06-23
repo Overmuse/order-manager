@@ -79,6 +79,9 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     for claim in claims {
         let (basis, shares) = match claim.amount {
             AmountSpec::Dollars(dollars) => {
+                if dollars.is_zero() {
+                    continue;
+                }
                 let mut allocated_dollars = dollars.abs().min(remaining_basis.abs());
                 if dollars.is_sign_negative() {
                     allocated_dollars.set_sign_negative(true)
@@ -86,6 +89,9 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 (allocated_dollars, allocated_dollars / lot.price)
             }
             AmountSpec::Shares(shares) => {
+                if shares.is_zero() {
+                    continue;
+                }
                 let mut allocated_shares = shares.abs().min(remaining_shares.abs());
                 if shares.is_sign_negative() {
                     allocated_shares.set_sign_negative(true)

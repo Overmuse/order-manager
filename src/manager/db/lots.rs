@@ -6,41 +6,41 @@ impl OrderManager {
     #[tracing::instrument(skip(self))]
     pub(crate) async fn get_lots(&self) -> Result<Vec<Lot>> {
         trace!("Getting claims");
-        let rows = self
-            .db_client
+        self.db_client
             .query("SELECT * FROM lots", &[])
             .await?
             .into_iter()
-            .map(|row| Lot {
-                id: row.get(0),
-                order_id: row.get(1),
-                ticker: row.get(2),
-                fill_time: row.get(3),
-                price: row.get(4),
-                shares: row.get(5),
+            .map(|row| -> Result<Lot> {
+                Ok(Lot {
+                    id: row.try_get(0)?,
+                    order_id: row.try_get(1)?,
+                    ticker: row.try_get(2)?,
+                    fill_time: row.try_get(3)?,
+                    price: row.try_get(4)?,
+                    shares: row.try_get(5)?,
+                })
             })
-            .collect();
-        Ok(rows)
+            .collect()
     }
 
     #[tracing::instrument(skip(self))]
     pub(crate) async fn get_lots_by_order_id(&self, order_id: &str) -> Result<Vec<Lot>> {
         trace!("Getting claims");
-        let rows = self
-            .db_client
+        self.db_client
             .query("SELECT * FROM lots WHERE order_id = $1", &[&order_id])
             .await?
             .into_iter()
-            .map(|row| Lot {
-                id: row.get(0),
-                order_id: row.get(1),
-                ticker: row.get(2),
-                fill_time: row.get(3),
-                price: row.get(4),
-                shares: row.get(5),
+            .map(|row| -> Result<Lot> {
+                Ok(Lot {
+                    id: row.try_get(0)?,
+                    order_id: row.try_get(1)?,
+                    ticker: row.try_get(2)?,
+                    fill_time: row.try_get(3)?,
+                    price: row.try_get(4)?,
+                    shares: row.try_get(5)?,
+                })
             })
-            .collect();
-        Ok(rows)
+            .collect()
     }
 
     #[tracing::instrument(skip(self, lot))]

@@ -1,10 +1,8 @@
 use alpaca::orders::OrderIntent;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
-use multimap::MultiMap;
 use position_intents::PositionIntent;
 use rdkafka::consumer::StreamConsumer;
-use std::collections::HashMap;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{error, info};
@@ -27,8 +25,6 @@ pub struct OrderManager {
     scheduler_sender: UnboundedSender<PositionIntent>,
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
     order_sender: UnboundedSender<OrderIntent>,
-    pending_orders: HashMap<String, PendingOrder>,
-    dependent_orders: MultiMap<String, OrderIntent>,
     db_client: Client,
 }
 
@@ -45,8 +41,6 @@ impl OrderManager {
             scheduler_sender,
             scheduler_receiver,
             order_sender,
-            pending_orders: HashMap::new(),
-            dependent_orders: MultiMap::new(),
             db_client,
         }
     }

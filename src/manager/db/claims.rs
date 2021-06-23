@@ -9,20 +9,48 @@ impl OrderManager {
     #[tracing::instrument(skip(self))]
     pub(crate) async fn get_claims_by_ticker(&self, ticker: &str) -> Result<Vec<Claim>> {
         trace!("Getting claims");
-        let rows = self
-            .db_client
-            .query("SELECT * FROM claims WHERE ticker = $1::TEXT", &[&ticker])
+        self.db_client
+            .query("SELECT * FROM claims WHERE ticker = $1", &[&ticker])
             .await?
             .into_iter()
-            .map(|row| Claim {
-                id: row.get(0),
-                strategy: row.get(1),
-                sub_strategy: row.get(2),
-                ticker: row.get(3),
-                amount: unite_amount_spec(row.get(4), row.get(5)),
+            .map(|row| -> Result<Claim> {
+                Ok(Claim {
+                    id: row.try_get(0)?,
+                    strategy: row.try_get(1)?,
+                    sub_strategy: row.try_get(2)?,
+                    ticker: row.try_get(3)?,
+                    amount: unite_amount_spec(row.try_get(4)?, row.try_get(5)?),
+                })
             })
-            .collect();
-        Ok(rows)
+            .collect()
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(crate) async fn get_claim_by_id(&self, id: Uuid) -> Result<Claim> {
+        trace!("Getting claim");
+        let row = self
+            .db_client
+            .query_one("SELECT * FROM claims WHERE id = $1", &[&id])
+            .await?;
+        Ok(Claim {
+            id: row.try_get(0)?,
+            strategy: row.try_get(1)?,
+            sub_strategy: row.try_get(2)?,
+            ticker: row.try_get(3)?,
+            amount: unite_amount_spec(row.try_get(4)?, row.try_get(5)?),
+        })
+    }
+
+    pub(crate) async fn update_claim_amount(&self, id: Uuid, amount: AmountSpec) -> Result<()> {
+        trace!("Updating claim amount");
+        let (amount, unit) = split_amount_spec(amount);
+        self.db_client
+            .execute(
+                "UPDATE claims SET amount = $1, unit = $2 WHERE id = $3",
+                &[&amount, &unit, &id],
+            )
+            .await?;
+        Ok(())
     }
 
     #[tracing::instrument(skip(self))]

@@ -6,38 +6,27 @@ impl OrderManager {
     #[tracing::instrument(skip(self))]
     pub(crate) async fn get_allocations(&self) -> Result<Vec<Allocation>> {
         trace!("Getting allocations");
-        let rows = self
-            .db_client
+        self.db_client
             .query("SELECT * FROM allocations", &[])
             .await?
             .into_iter()
-            .map(|row| {
-                let owner = if row.get::<usize, &str>(0) == "House" {
+            .map(|row| -> Result<Allocation> {
+                let owner = if row.try_get::<usize, &str>(0)? == "House" {
                     Owner::House
                 } else {
-                    Owner::Strategy(row.get(0), row.get(1))
+                    Owner::Strategy(row.try_get(0)?, row.try_get(1)?)
                 };
-                Allocation::new(
+                Ok(Allocation::new(
                     owner,
-                    row.get(2),
-                    row.get(3),
-                    row.get(4),
-                    row.get(5),
-                    row.get(6),
-                )
+                    row.try_get(2)?,
+                    row.try_get(3)?,
+                    row.try_get(4)?,
+                    row.try_get(5)?,
+                    row.try_get(6)?,
+                ))
             })
-            .collect();
-        Ok(rows)
+            .collect()
     }
-
-    // #[tracing::instrument(skip(self))]
-    // pub(crate) async fn delete_claim_by_id(&self, id: Uuid) -> Result<()> {
-    //     trace!("Deleting claim");
-    //     self.db_client
-    //         .execute("DELETE FROM claims WHERE id = $1;", &[&id])
-    //         .await?;
-    //     Ok(())
-    // }
 
     #[tracing::instrument(skip(self, allocation))]
     pub(crate) async fn save_allocation(&self, allocation: Allocation) -> Result<()> {

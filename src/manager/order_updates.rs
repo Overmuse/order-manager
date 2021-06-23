@@ -21,21 +21,29 @@ impl OrderManager {
         match event.event {
             Event::Canceled { .. } => {
                 debug!("Order cancelled");
-                self.pending_orders.remove(&event.order.client_order_id);
+                self.delete_pending_order_by_id(&event.order.client_order_id)
+                    .await?;
             }
             Event::Expired { .. } => {
                 debug!("Order expired");
-                self.pending_orders.remove(&event.order.client_order_id);
+                self.delete_pending_order_by_id(&event.order.client_order_id)
+                    .await?;
             }
             Event::Fill {
                 price, timestamp, ..
             } => {
                 debug!("Fill");
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty).await?;
-                self.pending_orders.remove(&event.order.client_order_id);
+                debug!("Deleting pending order");
+                self.delete_pending_order_by_id(&event.order.client_order_id)
+                    .await?;
+                debug!("Saving lot");
                 self.save_lot(new_lot.clone()).await?;
+                debug!("Assigning lot");
                 self.assign_lot(new_lot).await?;
+                debug!("Triggering dependent orders");
                 self.trigger_dependent_orders(&id)
+                    .await
                     .context("Failed to trigger dependent-orders")?
             }
             Event::PartialFill {
@@ -43,14 +51,15 @@ impl OrderManager {
             } => {
                 debug!("Partial fill");
                 let pending_order = self
-                    .pending_orders
-                    .get_mut(&event.order.client_order_id)
+                    .get_pending_order_by_id(&event.order.client_order_id)
+                    .await?
                     .ok_or_else(|| anyhow!("Partial fill received without seeing `new` event"))?;
                 let filled_qty = match event.order.side {
                     Side::Buy => event.order.filled_qty.to_isize().unwrap(),
                     Side::Sell => -(event.order.filled_qty.to_isize().unwrap()),
                 };
-                pending_order.pending_qty = pending_order.qty - filled_qty;
+                let pending_qty = pending_order.qty - filled_qty as i32;
+                self.update_pending_order_qty(&id, pending_qty).await?;
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty).await?;
                 self.save_lot(new_lot.clone()).await?;
                 self.assign_lot(new_lot).await?;
@@ -100,52 +109,31 @@ impl OrderManager {
     #[tracing::instrument(skip(self))]
     async fn assign_lot(&mut self, lot: Lot) -> Result<()> {
         let claims = self.get_claims_by_ticker(&lot.ticker).await?;
-        if !claims.is_empty() {
-            let allocations = split_lot(&claims, &lot);
-            self.delete_claims_from_allocations(&lot.ticker, &allocations)
-                .await?;
-            for allocation in allocations {
-                self.save_allocation(allocation).await?;
-            }
+        let allocations = split_lot(&claims, &lot);
+        for allocation in allocations {
+            self.adjust_claim(&allocation).await?;
+            self.save_allocation(allocation).await?;
         }
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, allocations))]
-    async fn delete_claims_from_allocations(
-        &mut self,
-        ticker: &str,
-        allocations: &[Allocation],
-    ) -> Result<()> {
-        let mut claims = self.get_claims_by_ticker(ticker).await?;
-        for allocation in allocations {
-            for mut claim in claims.iter_mut() {
-                if allocation.claim_id == Some(claim.id) {
-                    match claim.amount {
-                        AmountSpec::Dollars(dollars) => {
-                            let new_dollars = dollars - allocation.basis;
-                            claim.amount = AmountSpec::Dollars(new_dollars);
-                        }
-                        AmountSpec::Shares(shares) => {
-                            let new_shares = shares - allocation.shares;
-                            claim.amount = AmountSpec::Shares(new_shares);
-                        }
-                        _ => unimplemented!(),
-                    }
+    #[tracing::instrument(skip(self, allocation))]
+    async fn adjust_claim(&self, allocation: &Allocation) -> Result<()> {
+        if let Some(claim_id) = allocation.claim_id {
+            let claim = self.get_claim_by_id(claim_id).await?;
+            let amount = match claim.amount {
+                AmountSpec::Dollars(dollars) => {
+                    let new_dollars = dollars - allocation.basis;
+                    AmountSpec::Dollars(new_dollars)
                 }
-            }
-        }
-        for claim in claims {
-            let should_delete = match claim.amount {
-                AmountSpec::Dollars(dollars) => dollars.is_zero(),
-                AmountSpec::Shares(shares) => shares.is_zero(),
+                AmountSpec::Shares(shares) => {
+                    let new_shares = shares - allocation.shares;
+                    AmountSpec::Shares(new_shares)
+                }
                 _ => unimplemented!(),
             };
-            if should_delete {
-                self.delete_claim_by_id(claim.id).await?
-            }
-        }
-
+            self.update_claim_amount(claim_id, amount).await?;
+        };
         Ok(())
     }
 }
