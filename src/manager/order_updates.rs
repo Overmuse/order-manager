@@ -16,8 +16,6 @@ impl OrderManager {
             Side::Buy => Decimal::from_usize(event.order.qty).unwrap(),
             Side::Sell => -Decimal::from_usize(event.order.qty).unwrap(),
         };
-        //self.upsert_order(&event.order).await?;
-        //self.delete_pending_order_by_id(id.clone()).await?;
         match event.event {
             Event::Canceled { .. } => {
                 debug!("Order cancelled");
@@ -32,7 +30,7 @@ impl OrderManager {
             Event::Fill {
                 price, timestamp, ..
             } => {
-                debug!("Fill");
+                debug!("Order filled");
                 let new_lot = self.make_lot(&id, ticker, timestamp, price, qty).await?;
                 debug!("Deleting pending order");
                 self.delete_pending_order_by_id(&event.order.client_order_id)

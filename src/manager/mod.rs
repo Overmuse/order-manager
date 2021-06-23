@@ -59,9 +59,9 @@ impl OrderManager {
     async fn handle_input(&mut self, input: Result<Input>) -> Result<()> {
         match input {
             Ok(Input::PositionIntent(intent)) => self
-                .handle_position_intent(intent)
+                .triage_intent(intent)
                 .await
-                .context("Failed to handle PositionIntent")?,
+                .context("Failed to triage PositionIntent")?,
             Ok(Input::AlpacaMessage(AlpacaMessage::TradeUpdates(oe))) => self
                 .handle_order_update(oe)
                 .await

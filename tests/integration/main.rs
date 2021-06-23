@@ -299,6 +299,12 @@ async fn main() -> Result<()> {
     let order_intent = receive_oi(&consumer).await.unwrap();
     assert_eq!(order_intent.qty, 100);
     assert_eq!(order_intent.side, alpaca::common::Side::Sell);
+    let new_id = order_intent.client_order_id.unwrap();
+    let fill_message = format!(
+        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"0","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"100","filled_qty":"100","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"sell","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+        new_id
+    );
+    send_order_event(&producer, &fill_message).await.unwrap();
 
     teardown(&admin, &admin_options).await;
     Ok(())

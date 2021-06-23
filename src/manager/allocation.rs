@@ -136,7 +136,7 @@ pub(crate) struct Position {
 
 impl Position {
     #[tracing::instrument]
-    pub(super) fn new(owner: Owner, ticker: String, shares: Decimal, basis: Decimal) -> Self {
+    pub fn new(owner: Owner, ticker: String, shares: Decimal, basis: Decimal) -> Self {
         trace!("New Position");
         Self {
             owner,
@@ -146,23 +146,12 @@ impl Position {
         }
     }
 
-    #[tracing::instrument(skip(allocations))]
-    pub(super) fn from_allocations(allocations: &[Allocation]) -> Self {
-        let ticker = allocations[0].ticker.clone();
-        let owner = allocations[0].owner.clone();
-        let (shares, basis) =
-            allocations
-                .iter()
-                .fold((Decimal::ZERO, Decimal::ZERO), |acc, allocation| {
-                    if allocation.ticker != ticker {
-                        panic!("Cannot build position out of allocations from different tickers")
-                    }
-                    if allocation.owner != owner {
-                        panic!("Cannout build position out of allocations of different owners")
-                    }
-                    (acc.0 + allocation.shares, acc.1 + allocation.basis)
-                });
-        Self::new(owner, ticker, shares, basis)
+    pub fn is_long(&self) -> bool {
+        self.shares > Decimal::ZERO
+    }
+
+    pub fn is_short(&self) -> bool {
+        self.shares < Decimal::ZERO
     }
 }
 
