@@ -121,7 +121,7 @@ impl OrderManager {
         let mut claims = self.get_claims_by_ticker(ticker).await?;
         for allocation in allocations {
             for mut claim in claims.iter_mut() {
-                if allocation.claim_id.clone().map(|x| x.to_string()) == Some(claim.id.clone()) {
+                if allocation.claim_id == Some(claim.id) {
                     match claim.amount {
                         AmountSpec::Dollars(dollars) => {
                             let new_dollars = dollars - allocation.basis;

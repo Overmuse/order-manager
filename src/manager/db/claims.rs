@@ -1,40 +1,53 @@
 use crate::manager::{Claim, OrderManager};
 use anyhow::Result;
+use futures::{StreamExt, TryStreamExt};
 use position_intents::AmountSpec;
 use rust_decimal::Decimal;
-use sqlx::Row;
+use sqlx::FromRow;
 use tracing::trace;
 use uuid::Uuid;
+
+#[derive(FromRow, Debug)]
+struct ClaimRow {
+    id: Uuid,
+    strategy: String,
+    sub_strategy: Option<String>,
+    ticker: String,
+    amount: Decimal,
+    unit: String,
+}
+
+impl Into<Claim> for ClaimRow {
+    fn into(self) -> Claim {
+        let amount_spec = unite_amount_spec(self.amount, &self.unit);
+        Claim {
+            id: self.id,
+            strategy: self.strategy,
+            ticker: self.ticker,
+            sub_strategy: self.sub_strategy,
+            amount: amount_spec,
+        }
+    }
+}
 
 impl OrderManager {
     #[tracing::instrument(skip(self))]
     pub(crate) async fn get_claims_by_ticker(&self, ticker: &str) -> Result<Vec<Claim>> {
         trace!("Getting claims");
-        let res = sqlx::query(
-            r#"SELECT id, strategy, sub_strategy as "sub_strategy?", ticker, amount, unit FROM claims WHERE ticker = $1"#,
-        )
-        .bind(ticker)
-        .fetch_all(&self.pool)
-        .await?;
-        let res = res
-            .into_iter()
-            .map(|row| -> Result<Claim> {
-                let amount_spec = unite_amount_spec(row.try_get("amount")?, row.try_get("unit")?);
-                Ok(Claim::new(
-                    row.try_get_unchecked("id")?,
-                    row.try_get("strategy")?,
-                    row.try_get("sub_strategy")?,
-                    amount_spec,
-                ))
+        let res = sqlx::query_as!(ClaimRow, "SELECT * FROM claims WHERE ticker = $1", ticker)
+            .fetch(&self.pool)
+            .map_ok(Into::into)
+            .filter_map(|x| {
+                trace!("{:?}", x);
+                async { x.ok() }
             })
-            .inspect(|x| trace!("{:?}", x))
-            .filter_map(Result::ok)
-            .collect();
+            .collect()
+            .await;
         Ok(res)
     }
 
     #[tracing::instrument(skip(self))]
-    pub(crate) async fn delete_claim_by_id(&self, id: String) -> Result<()> {
+    pub(crate) async fn delete_claim_by_id(&self, id: Uuid) -> Result<()> {
         trace!("Deleting claim");
         sqlx::query("DELETE FROM claims WHERE id = $1;")
             .bind(id)

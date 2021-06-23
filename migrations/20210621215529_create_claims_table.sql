@@ -1,7 +1,7 @@
 -- Add migration script here
 CREATE TABLE IF NOT EXISTS claims
 (
-    id           TEXT NOT NULL,
+    id           UUID PRIMARY KEY,
     strategy     TEXT NOT NULL,
     sub_strategy TEXT,
     ticker       TEXT NOT NULL,

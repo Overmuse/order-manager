@@ -13,7 +13,7 @@ pub(super) enum Owner {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Claim {
-    pub id: String,
+    pub id: Uuid,
     pub strategy: String,
     pub sub_strategy: Option<String>,
     pub ticker: String,
@@ -30,7 +30,7 @@ impl Claim {
     ) -> Self {
         trace!("New Claim");
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::new_v4(),
             strategy,
             sub_strategy,
             ticker,
@@ -42,7 +42,7 @@ impl Claim {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(super) struct Allocation {
     pub owner: Owner,
-    pub claim_id: Option<String>,
+    pub claim_id: Option<Uuid>,
     pub lot_id: Uuid,
     pub ticker: String,
     pub shares: Decimal,
@@ -53,7 +53,7 @@ impl Allocation {
     #[tracing::instrument]
     pub(super) fn new(
         owner: Owner,
-        claim_id: Option<String>,
+        claim_id: Option<Uuid>,
         lot_id: Uuid,
         ticker: String,
         shares: Decimal,
@@ -193,7 +193,7 @@ mod test {
             allocations[0],
             Allocation::new(
                 Owner::Strategy("A".into(), None),
-                Some(claims[0].id.clone()),
+                Some(claims[0].id),
                 lot.id,
                 "AAPL".into(),
                 Decimal::new(4, 0),
@@ -204,7 +204,7 @@ mod test {
             allocations[1],
             Allocation::new(
                 Owner::Strategy("B".into(), Some("B2".into())),
-                Some(claims[1].id.clone()),
+                Some(claims[1].id),
                 lot.id,
                 "AAPL".into(),
                 Decimal::new(25, 1),
