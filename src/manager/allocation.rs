@@ -103,7 +103,7 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
         };
         out.push(Allocation::new(
             Owner::Strategy(claim.strategy.clone(), claim.sub_strategy.clone()),
-            Some(claim.id.clone()),
+            Some(claim.id),
             lot.id,
             lot.ticker.clone(),
             shares,
