@@ -28,9 +28,7 @@ pub struct OrderManager {
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
     order_sender: UnboundedSender<OrderIntent>,
     pending_orders: HashMap<String, PendingOrder>,
-    partially_filled_lots: MultiMap<String, Lot>,
     dependent_orders: MultiMap<String, OrderIntent>,
-    allocations: Vec<Allocation>,
     db_client: Client,
 }
 
@@ -48,9 +46,7 @@ impl OrderManager {
             scheduler_receiver,
             order_sender,
             pending_orders: HashMap::new(),
-            partially_filled_lots: MultiMap::new(),
             dependent_orders: MultiMap::new(),
-            allocations: Vec::new(),
             db_client,
         }
     }

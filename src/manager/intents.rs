@@ -35,8 +35,8 @@ impl OrderManager {
     async fn transmit_position_intent(&mut self, intent: PositionIntent) -> Result<()> {
         match &intent.ticker {
             TickerSpec::Ticker(ticker) => {
-                let positions = self.get_positions(ticker);
-                match self.make_orders(&intent, ticker, &positions) {
+                let positions = self.get_positions(&ticker).await?;
+                match self.make_orders(&intent, &ticker, &positions) {
                     (None, None, None) => {
                         debug!("No trades generated");
                         Ok(())
@@ -57,7 +57,8 @@ impl OrderManager {
             TickerSpec::All => {
                 // TODO: Clean up this branch
                 let owned_tickers: HashSet<String> = self
-                    .allocations
+                    .get_allocations()
+                    .await?
                     .iter()
                     .filter_map(|alloc| {
                         if alloc.owner
@@ -70,7 +71,7 @@ impl OrderManager {
                     })
                     .collect();
                 for ticker in owned_tickers {
-                    let positions = self.get_positions(&ticker);
+                    let positions = self.get_positions(&ticker).await?;
                     match self.make_orders(&intent, &ticker, &positions) {
                         (None, None, None) => {
                             debug!("No trades generated")
@@ -117,17 +118,17 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self))]
-    fn get_positions(&self, ticker: &str) -> Vec<Position> {
-        let mut allocations = self.allocations.clone();
+    async fn get_positions(&self, ticker: &str) -> Result<Vec<Position>> {
+        let mut allocations = self.get_allocations().await?;
         allocations.retain(|x| x.ticker == ticker);
         let mut by_owner: multimap::MultiMap<Owner, Allocation> = multimap::MultiMap::new();
         for allocation in allocations {
             by_owner.insert(allocation.owner.clone(), allocation)
         }
-        by_owner
+        Ok(by_owner
             .iter_all()
             .map(|(_, allocs)| Position::from_allocations(allocs))
-            .collect()
+            .collect())
     }
 
     #[tracing::instrument(skip(self, intent, positions))]

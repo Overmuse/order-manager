@@ -31,9 +31,9 @@ impl OrderManager {
                 price, timestamp, ..
             } => {
                 debug!("Fill");
-                let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
+                let new_lot = self.make_lot(&id, ticker, timestamp, price, qty).await?;
                 self.pending_orders.remove(&event.order.client_order_id);
-                self.save_partially_filled_order_lot(id.clone(), new_lot.clone());
+                self.save_lot(new_lot.clone()).await?;
                 self.assign_lot(new_lot).await?;
                 self.trigger_dependent_orders(&id)
                     .context("Failed to trigger dependent-orders")?
@@ -51,8 +51,8 @@ impl OrderManager {
                     Side::Sell => -(event.order.filled_qty.to_isize().unwrap()),
                 };
                 pending_order.pending_qty = pending_order.qty - filled_qty;
-                let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
-                self.save_partially_filled_order_lot(id, new_lot.clone());
+                let new_lot = self.make_lot(&id, ticker, timestamp, price, qty).await?;
+                self.save_lot(new_lot.clone()).await?;
                 self.assign_lot(new_lot).await?;
             }
             _ => (),
@@ -61,42 +61,40 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self))]
-    fn make_lot(
+    async fn make_lot(
         &self,
         id: &str,
         ticker: String,
         timestamp: DateTime<Utc>,
         price: Decimal,
         position_quantity: Decimal,
-    ) -> Lot {
-        let (previous_quantity, previous_price) = self.previous_fill_data(id);
+    ) -> Result<Lot> {
+        let (previous_quantity, previous_price) = self.previous_fill_data(id).await?;
         let new_quantity = position_quantity - previous_quantity;
         let new_price =
             (price * position_quantity - previous_quantity * previous_price) / new_quantity;
-        Lot::new(ticker, timestamp, new_price, new_quantity)
+        Ok(Lot::new(
+            id.to_string(),
+            ticker,
+            timestamp,
+            new_price,
+            new_quantity,
+        ))
     }
 
     #[tracing::instrument(skip(self))]
-    fn previous_fill_data(&self, order_id: &str) -> (Decimal, Decimal) {
-        let previous_lots = self.partially_filled_lots.get_vec(order_id);
-        previous_lots
-            .map(|lots| {
-                lots.iter().fold(
-                    (Decimal::new(0, 0), Decimal::new(1, 0)),
-                    |(shares, price), lot| {
-                        (
-                            shares + lot.shares,
-                            (price * shares + lot.price) / (shares + lot.shares),
-                        )
-                    },
+    async fn previous_fill_data(&self, order_id: &str) -> Result<(Decimal, Decimal)> {
+        let previous_lots = self.get_lots_by_order_id(order_id).await?;
+        let (prev_qty, prev_price) = previous_lots.iter().fold(
+            (Decimal::new(0, 0), Decimal::new(1, 0)),
+            |(shares, price), lot| {
+                (
+                    shares + lot.shares,
+                    (price * shares + lot.price) / (shares + lot.shares),
                 )
-            })
-            .unwrap_or_else(|| (Decimal::new(0, 0), Decimal::new(1, 0)))
-    }
-
-    #[tracing::instrument(skip(self))]
-    fn save_partially_filled_order_lot(&mut self, order_id: String, lot: Lot) {
-        self.partially_filled_lots.insert(order_id, lot);
+            },
+        );
+        Ok((prev_qty, prev_price))
     }
 
     #[tracing::instrument(skip(self))]
@@ -106,7 +104,9 @@ impl OrderManager {
             let allocations = split_lot(&claims, &lot);
             self.delete_claims_from_allocations(&lot.ticker, &allocations)
                 .await?;
-            self.save_allocations(&allocations);
+            for allocation in allocations {
+                self.save_allocation(allocation).await?;
+            }
         }
         Ok(())
     }
@@ -147,10 +147,5 @@ impl OrderManager {
         }
 
         Ok(())
-    }
-
-    #[tracing::instrument(skip(self, allocations))]
-    fn save_allocations(&mut self, allocations: &[Allocation]) {
-        self.allocations.extend_from_slice(allocations)
     }
 }

@@ -6,7 +6,7 @@ use tracing::trace;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) enum Owner {
+pub(crate) enum Owner {
     House,
     Strategy(String, Option<String>),
 }
@@ -40,7 +40,7 @@ impl Claim {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub(super) struct Allocation {
+pub(crate) struct Allocation {
     pub owner: Owner,
     pub claim_id: Option<Uuid>,
     pub lot_id: Uuid,
@@ -51,7 +51,7 @@ pub(super) struct Allocation {
 
 impl Allocation {
     #[tracing::instrument]
-    pub(super) fn new(
+    pub(crate) fn new(
         owner: Owner,
         claim_id: Option<Uuid>,
         lot_id: Uuid,
@@ -168,6 +168,7 @@ mod test {
     #[test]
     fn test_split_lot_with_remainder() {
         let lot = Lot::new(
+            "A".into(),
             "AAPL".into(),
             Utc::now(),
             Decimal::new(100, 0),
