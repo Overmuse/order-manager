@@ -1,57 +1,35 @@
 use crate::manager::{Claim, OrderManager};
 use anyhow::Result;
-use futures::{StreamExt, TryStreamExt};
 use position_intents::AmountSpec;
-use rust_decimal::Decimal;
-use sqlx::FromRow;
+use rust_decimal::prelude::*;
 use tracing::trace;
 use uuid::Uuid;
-
-#[derive(FromRow, Debug)]
-struct ClaimRow {
-    id: Uuid,
-    strategy: String,
-    sub_strategy: Option<String>,
-    ticker: String,
-    amount: Decimal,
-    unit: String,
-}
-
-impl Into<Claim> for ClaimRow {
-    fn into(self) -> Claim {
-        let amount_spec = unite_amount_spec(self.amount, &self.unit);
-        Claim {
-            id: self.id,
-            strategy: self.strategy,
-            ticker: self.ticker,
-            sub_strategy: self.sub_strategy,
-            amount: amount_spec,
-        }
-    }
-}
 
 impl OrderManager {
     #[tracing::instrument(skip(self))]
     pub(crate) async fn get_claims_by_ticker(&self, ticker: &str) -> Result<Vec<Claim>> {
         trace!("Getting claims");
-        let res = sqlx::query_as!(ClaimRow, "SELECT * FROM claims WHERE ticker = $1", ticker)
-            .fetch(&self.pool)
-            .map_ok(Into::into)
-            .filter_map(|x| {
-                trace!("{:?}", x);
-                async { x.ok() }
+        let rows = self
+            .db_client
+            .query("SELECT * FROM claims WHERE ticker = $1::TEXT", &[&ticker])
+            .await?
+            .into_iter()
+            .map(|row| Claim {
+                id: row.get(0),
+                strategy: row.get(1),
+                sub_strategy: row.get(2),
+                ticker: row.get(3),
+                amount: unite_amount_spec(row.get(4), row.get(5)),
             })
-            .collect()
-            .await;
-        Ok(res)
+            .collect();
+        Ok(rows)
     }
 
     #[tracing::instrument(skip(self))]
     pub(crate) async fn delete_claim_by_id(&self, id: Uuid) -> Result<()> {
         trace!("Deleting claim");
-        sqlx::query("DELETE FROM claims WHERE id = $1;")
-            .bind(id)
-            .execute(&self.pool)
+        self.db_client
+            .execute("DELETE FROM claims WHERE id = $1;", &[&id])
             .await?;
         Ok(())
     }
@@ -60,14 +38,13 @@ impl OrderManager {
     pub(crate) async fn save_claim(&self, claim: Claim) -> Result<()> {
         trace!("Saving claim");
         let (amount, unit) = split_amount_spec(claim.amount);
-        sqlx::query("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);")
-            .bind(claim.id)
-            .bind(claim.strategy)
-            .bind(claim.sub_strategy)
-            .bind(claim.ticker)
-            .bind(amount)
-            .bind(unit)
-            .execute(&self.pool)
+        self.db_client.execute("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);", &[
+            &claim.id,
+            &claim.strategy,
+            &claim.sub_strategy,
+            &claim.ticker,
+            &amount,
+            &unit])
             .await?;
         Ok(())
     }

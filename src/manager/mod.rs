@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 use multimap::MultiMap;
 use position_intents::PositionIntent;
 use rdkafka::consumer::StreamConsumer;
-use sqlx::postgres::PgPool;
 use std::collections::HashMap;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio_postgres::Client;
 use tracing::{error, info};
 
 mod allocation;
@@ -31,7 +31,7 @@ pub struct OrderManager {
     partially_filled_lots: MultiMap<String, Lot>,
     dependent_orders: MultiMap<String, OrderIntent>,
     allocations: Vec<Allocation>,
-    pool: PgPool,
+    db_client: Client,
 }
 
 impl OrderManager {
@@ -40,7 +40,7 @@ impl OrderManager {
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
         order_sender: UnboundedSender<OrderIntent>,
-        pool: PgPool,
+        db_client: Client,
     ) -> Self {
         Self {
             kafka_consumer,
@@ -51,7 +51,7 @@ impl OrderManager {
             partially_filled_lots: MultiMap::new(),
             dependent_orders: MultiMap::new(),
             allocations: Vec::new(),
-            pool,
+            db_client,
         }
     }
 

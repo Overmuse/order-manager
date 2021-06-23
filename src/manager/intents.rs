@@ -164,18 +164,24 @@ impl OrderManager {
 
         match intent.update_policy {
             UpdatePolicy::Retain => {
-                debug!("No trading needed");
+                debug!("UpdatePolicy::Retain: No trading needed");
                 return (None, None, None);
             }
             UpdatePolicy::RetainLong => {
                 if strategy_shares > Decimal::ZERO {
-                    debug!("No trading needed");
+                    debug!(
+                        "UpdatePolicy::RetainLong and position {}: No trading needed",
+                        strategy_shares
+                    );
                     return (None, None, None);
                 }
             }
             UpdatePolicy::RetainShort => {
                 if strategy_shares < Decimal::ZERO {
-                    debug!("No trading needed");
+                    debug!(
+                        "UpdatePolicy::RetainShort and position {}: No trading needed",
+                        strategy_shares
+                    );
                     return (None, None, None);
                 }
             }
@@ -197,7 +203,7 @@ impl OrderManager {
             _ => unimplemented!(),
         };
         if diff_shares.is_zero() {
-            debug!("No trading needed");
+            debug!("No change in shares: No trading needed");
             (None, None, None)
         } else {
             let claim = Claim::new(

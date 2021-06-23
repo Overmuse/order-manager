@@ -22,7 +22,7 @@ impl OrderSender {
         info!("Starting OrderSender");
         let producer = self.producer;
         while let Some(oi) = self.order_queue.recv().await {
-            info!("Sending order_intent");
+            info!("Sending order_intent {:?}", oi);
             let payload = serde_json::to_string(&oi);
             match payload {
                 Ok(payload) => {

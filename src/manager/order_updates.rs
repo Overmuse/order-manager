@@ -102,7 +102,6 @@ impl OrderManager {
     #[tracing::instrument(skip(self))]
     async fn assign_lot(&mut self, lot: Lot) -> Result<()> {
         let claims = self.get_claims_by_ticker(&lot.ticker).await?;
-        debug!("CLAIMS: {:?}", claims);
         if !claims.is_empty() {
             let allocations = split_lot(&claims, &lot);
             self.delete_claims_from_allocations(&lot.ticker, &allocations)
