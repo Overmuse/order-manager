@@ -50,7 +50,6 @@ impl OrderManager {
         loop {
             let message = self.receive_message().await;
             if let Err(e) = self.handle_input(message).await {
-                //panic!("{:?}", e)
                 error!("{:?}", e)
             }
         }

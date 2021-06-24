@@ -3,20 +3,18 @@ use crate::manager::PendingOrder;
 use anyhow::Result;
 
 impl OrderManager {
-    pub(crate) async fn get_pending_orders(&self) -> Result<Vec<PendingOrder>> {
+    pub(crate) async fn get_pending_order_amount_by_ticker(
+        &self,
+        ticker: &str,
+    ) -> Result<Option<i32>> {
         self.db_client
-            .query("SELECT * FROM pending_orders", &[])
+            .query_opt(
+                "SELECT pending_quantity FROM pending_orders WHERE ticker = $1",
+                &[&ticker],
+            )
             .await?
-            .into_iter()
-            .map(|row| -> Result<PendingOrder> {
-                Ok(PendingOrder {
-                    id: row.try_get(0)?,
-                    ticker: row.try_get(1)?,
-                    qty: row.try_get(2)?,
-                    pending_qty: row.try_get(3)?,
-                })
-            })
-            .collect()
+            .map(|row| -> Result<i32> { Ok(row.try_get(0)?) })
+            .transpose()
     }
 
     pub(crate) async fn get_pending_order_by_id(&self, id: &str) -> Result<Option<PendingOrder>> {

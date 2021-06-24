@@ -71,15 +71,43 @@ impl OrderManager {
         intent: PositionIntent,
         ticker: &str,
     ) -> Result<()> {
-        let pending_orders = self.get_pending_orders().await?;
-        let positions = self.get_positions_by_ticker(&ticker).await?;
-        match self.make_orders(&intent, &ticker, &positions, &pending_orders) {
+        let pending_shares = self
+            .get_pending_order_amount_by_ticker(ticker)
+            .await
+            .context("Failed to get pending order amount")?
+            .unwrap_or(0)
+            .into();
+        let positions = self
+            .get_positions_by_ticker(&ticker)
+            .await
+            .context("Failed to get positions")?;
+        let strategy_shares = positions
+            .iter()
+            .filter_map(|pos| {
+                if let Owner::Strategy(strategy, sub_strategy) = &pos.owner {
+                    if strategy == &intent.strategy && sub_strategy == &intent.sub_strategy {
+                        return Some(pos.shares);
+                    }
+                }
+                None
+            })
+            .sum();
+        let total_shares = positions.iter().map(|pos| pos.shares).sum();
+        match self.make_orders(
+            &intent,
+            &ticker,
+            strategy_shares,
+            total_shares,
+            pending_shares,
+        ) {
             (None, None, None) => {
                 debug!("No trades generated");
                 Ok(())
             }
             (Some(claim), Some(sent), None) => {
-                self.save_claim(claim).await?;
+                self.save_claim(claim)
+                    .await
+                    .context("Failed to save claim")?;
                 let qty = match sent.side {
                     Side::Buy => sent.qty.to_isize().unwrap(),
                     Side::Sell => -(sent.qty.to_isize().unwrap()),
@@ -89,14 +117,21 @@ impl OrderManager {
                     ticker.to_string(),
                     qty as i32,
                 ))
-                .await?;
-                Ok(self.order_sender.send(sent)?)
+                .await
+                .context("Failed to save pending order")?;
+                Ok(self
+                    .order_sender
+                    .send(sent)
+                    .context("Failed to send order")?)
             }
             (Some(claim), Some(sent), Some(saved)) => {
                 debug!("Saving dependent order");
                 self.save_dependent_order(&sent.client_order_id.clone().unwrap(), saved)
-                    .await?;
-                self.save_claim(claim).await?;
+                    .await
+                    .context("Failed to save dependent order")?;
+                self.save_claim(claim)
+                    .await
+                    .context("Failed to save claim")?;
                 let qty = match sent.side {
                     Side::Buy => sent.qty.to_isize().unwrap(),
                     Side::Sell => -(sent.qty.to_isize().unwrap()),
@@ -106,8 +141,12 @@ impl OrderManager {
                     ticker.to_string(),
                     qty as i32,
                 ))
-                .await?;
-                Ok(self.order_sender.send(sent)?)
+                .await
+                .context("Failed to save pending order")?;
+                Ok(self
+                    .order_sender
+                    .send(sent)
+                    .context("Failed to send order")?)
             }
             _ => unreachable!(),
         }
@@ -125,26 +164,32 @@ impl OrderManager {
                 }
                 UpdatePolicy::RetainLong => self
                     .get_positions_by_owner(owner)
-                    .await?
+                    .await
+                    .context("Failed to get positions")?
                     .into_iter()
                     .filter(|pos| pos.is_short())
                     .collect(),
                 UpdatePolicy::RetainShort => self
                     .get_positions_by_owner(owner)
-                    .await?
+                    .await
+                    .context("Failed to get position")?
                     .into_iter()
                     .filter(|pos| pos.is_long())
                     .collect(),
-                UpdatePolicy::Update => self.get_positions_by_owner(owner).await?,
+                UpdatePolicy::Update => self
+                    .get_positions_by_owner(owner)
+                    .await
+                    .context("Failed to get positions")?,
             };
-            trace!("POSITIONS: {:?}", positions);
             let id = intent.id.to_string();
             for position in positions {
-                self.close_position(&id, position).await?
+                self.close_position(&id, position)
+                    .await
+                    .context("Failed to close position")?
             }
             Ok(())
         } else {
-            Err(anyhow!("amonut must be Zero if ticker is All"))
+            Err(anyhow!("amount must be Zero if ticker is All"))
         }
     }
 
@@ -158,51 +203,34 @@ impl OrderManager {
                 position.ticker.clone(),
                 AmountSpec::Shares(-position.shares),
             );
-            self.save_claim(claim).await?;
+            self.save_claim(claim)
+                .await
+                .context("Failed to save claim")?;
             self.save_pending_order(PendingOrder::new(
                 order_intent.client_order_id.clone().unwrap(),
                 position.ticker.to_string(),
                 (-position.shares).to_i32().unwrap(),
             ))
-            .await?;
-            Ok(self.order_sender.send(order_intent)?)
+            .await
+            .context("Failed to save pending order")?;
+            Ok(self
+                .order_sender
+                .send(order_intent)
+                .context("Failed to send order")?)
         } else {
             Err(anyhow!("Can't close position of house account"))
         }
     }
 
-    #[tracing::instrument(skip(self, intent, positions, pending_orders))]
+    #[tracing::instrument(skip(self, intent))]
     fn make_orders(
         &self,
         intent: &PositionIntent,
         ticker: &str,
-        positions: &[Position],
-        pending_orders: &[PendingOrder],
+        strategy_shares: Decimal,
+        total_shares: Decimal,
+        pending_shares: Decimal,
     ) -> (Option<Claim>, Option<OrderIntent>, Option<OrderIntent>) {
-        let (strategy_shares, total_shares) = positions.iter().fold(
-            (Decimal::ZERO, Decimal::ZERO),
-            |(strat_shares, all_shares), pos| {
-                if pos.owner
-                    == Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone())
-                {
-                    (strat_shares + pos.shares, all_shares + pos.shares)
-                } else {
-                    (strat_shares, all_shares + pos.shares)
-                }
-            },
-        );
-        let pending_shares: Decimal = pending_orders
-            .iter()
-            .filter_map(|pending_order| {
-                if pending_order.ticker == ticker {
-                    Some(pending_order.pending_qty)
-                } else {
-                    None
-                }
-            })
-            .sum::<i32>()
-            .into();
-
         match intent.update_policy {
             UpdatePolicy::Retain => {
                 debug!("UpdatePolicy::Retain: No trading needed");
@@ -245,42 +273,41 @@ impl OrderManager {
         };
         if diff_shares.is_zero() {
             debug!("No change in shares: No trading needed");
-            (None, None, None)
-        } else {
-            let claim = Claim::new(
-                intent.strategy.clone(),
-                intent.sub_strategy.clone(),
-                ticker.to_string(),
-                AmountSpec::Shares(diff_shares),
+            return (None, None, None);
+        }
+        let claim = Claim::new(
+            intent.strategy.clone(),
+            intent.sub_strategy.clone(),
+            ticker.to_string(),
+            AmountSpec::Shares(diff_shares),
+        );
+        let signum_product = (total_shares + pending_shares).signum()
+            * (diff_shares + total_shares + pending_shares).signum();
+        if !signum_product.is_sign_negative() {
+            let trade = make_order_intent(
+                &intent.id.to_string(),
+                ticker,
+                diff_shares,
+                intent.limit_price,
+                intent.stop_price,
             );
-            let signum_product = (total_shares + pending_shares).signum()
-                * (diff_shares + total_shares + pending_shares).signum();
-            if !signum_product.is_sign_negative() {
-                let trade = make_order_intent(
-                    &intent.id.to_string(),
-                    ticker,
-                    diff_shares,
-                    intent.limit_price,
-                    intent.stop_price,
-                );
-                (Some(claim), Some(trade), None)
-            } else {
-                let sent = make_order_intent(
-                    &intent.id.to_string(),
-                    ticker,
-                    -(total_shares + pending_shares),
-                    intent.limit_price,
-                    intent.stop_price,
-                );
-                let saved = make_order_intent(
-                    &intent.id.to_string(),
-                    ticker,
-                    diff_shares + total_shares + pending_shares,
-                    intent.limit_price,
-                    intent.stop_price,
-                );
-                (Some(claim), Some(sent), Some(saved))
-            }
+            (Some(claim), Some(trade), None)
+        } else {
+            let sent = make_order_intent(
+                &intent.id.to_string(),
+                ticker,
+                -(total_shares + pending_shares),
+                intent.limit_price,
+                intent.stop_price,
+            );
+            let saved = make_order_intent(
+                &intent.id.to_string(),
+                ticker,
+                diff_shares + total_shares + pending_shares,
+                intent.limit_price,
+                intent.stop_price,
+            );
+            (Some(claim), Some(sent), Some(saved))
         }
     }
 }
