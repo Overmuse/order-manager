@@ -39,7 +39,7 @@ jobs:
       - name: Initiate kafka
         run: ./scripts/init_kafka.sh
       - name: Install dbmate
-        run: curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && chmod +x /usr/local/bin/dbmate
+        run: sudo curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && sudo chmod +x /usr/local/bin/dbmate
       - name: Initiate postgres
         run: ./scripts/init_db.sh
       - name: Run tests 
