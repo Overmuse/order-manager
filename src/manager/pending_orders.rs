@@ -1,15 +1,17 @@
-pub(super) struct PendingOrder {
+pub(crate) struct PendingOrder {
+    pub id: String,
     pub ticker: String,
-    pub qty: isize,
-    pub pending_qty: isize,
+    pub qty: i32,
+    pub pending_qty: i32,
 }
 
 impl PendingOrder {
-    pub fn new(ticker: String, qty: isize) -> Self {
+    pub fn new(id: String, ticker: String, qty: i32) -> Self {
         Self {
+            id,
             ticker,
             qty,
-            pending_qty: 0,
+            pending_qty: qty,
         }
     }
 }

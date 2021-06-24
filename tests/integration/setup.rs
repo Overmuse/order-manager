@@ -8,7 +8,10 @@ use rdkafka::{
 use tracing::{debug, subscriber::set_global_default};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-pub async fn setup() -> (
+pub async fn setup(
+    database_address: &str,
+    database_name: &str,
+) -> (
     AdminClient<DefaultClientContext>,
     AdminOptions,
     StreamConsumer,
@@ -49,6 +52,18 @@ pub async fn setup() -> (
         .set("group.id", "test-consumer")
         .create()
         .unwrap();
+
+    debug!("Creating database");
+    // std::process::Command::new("dbmate")
+    //     .arg("--wait")
+    //     .arg("--url")
+    //     .arg(format!(
+    //         "{}/{}?sslmode=disable",
+    //         database_address, database_name
+    //     ))
+    //     .arg("up")
+    //     .output()
+    //     .unwrap();
 
     (admin, admin_options, consumer, producer)
 }

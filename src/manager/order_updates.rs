@@ -1,4 +1,4 @@
-use super::{split_lot, Allocation, Claim, Lot, OrderManager};
+use super::{split_lot, Allocation, Lot, OrderManager};
 use alpaca::{Event, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -16,26 +16,42 @@ impl OrderManager {
             Side::Buy => Decimal::from_usize(event.order.qty).unwrap(),
             Side::Sell => -Decimal::from_usize(event.order.qty).unwrap(),
         };
-        //self.upsert_order(&event.order).await?;
-        //self.delete_pending_order_by_id(id.clone()).await?;
         match event.event {
             Event::Canceled { .. } => {
                 debug!("Order cancelled");
-                self.pending_orders.remove(&event.order.client_order_id);
+                self.delete_pending_order_by_id(&event.order.client_order_id)
+                    .await
+                    .context("Failed to delete pending order")?;
             }
             Event::Expired { .. } => {
                 debug!("Order expired");
-                self.pending_orders.remove(&event.order.client_order_id);
+                self.delete_pending_order_by_id(&event.order.client_order_id)
+                    .await
+                    .context("Failed to delete pending order")?;
             }
             Event::Fill {
                 price, timestamp, ..
             } => {
-                debug!("Fill");
-                let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
-                self.pending_orders.remove(&event.order.client_order_id);
-                self.save_partially_filled_order_lot(id.clone(), new_lot.clone());
-                self.assign_lot(new_lot);
+                debug!("Order filled");
+                let new_lot = self
+                    .make_lot(&id, ticker, timestamp, price, qty)
+                    .await
+                    .context("Failed to make lot")?;
+                debug!("Deleting pending order");
+                self.delete_pending_order_by_id(&event.order.client_order_id)
+                    .await
+                    .context("Failed to delete pending order")?;
+                debug!("Saving lot");
+                self.save_lot(new_lot.clone())
+                    .await
+                    .context("Failed to save lot")?;
+                debug!("Assigning lot");
+                self.assign_lot(new_lot)
+                    .await
+                    .context("Failed to assign lot")?;
+                debug!("Triggering dependent orders");
                 self.trigger_dependent_orders(&id)
+                    .await
                     .context("Failed to trigger dependent-orders")?
             }
             Event::PartialFill {
@@ -43,17 +59,28 @@ impl OrderManager {
             } => {
                 debug!("Partial fill");
                 let pending_order = self
-                    .pending_orders
-                    .get_mut(&event.order.client_order_id)
+                    .get_pending_order_by_id(&event.order.client_order_id)
+                    .await
+                    .context("Failed to get pending order")?
                     .ok_or_else(|| anyhow!("Partial fill received without seeing `new` event"))?;
                 let filled_qty = match event.order.side {
                     Side::Buy => event.order.filled_qty.to_isize().unwrap(),
                     Side::Sell => -(event.order.filled_qty.to_isize().unwrap()),
                 };
-                pending_order.pending_qty = pending_order.qty - filled_qty;
-                let new_lot = self.make_lot(&id, ticker, timestamp, price, qty);
-                self.save_partially_filled_order_lot(id, new_lot.clone());
-                self.assign_lot(new_lot);
+                let pending_qty = pending_order.qty - filled_qty as i32;
+                self.update_pending_order_qty(&id, pending_qty)
+                    .await
+                    .context("Failed to update pending order quantity")?;
+                let new_lot = self
+                    .make_lot(&id, ticker, timestamp, price, qty)
+                    .await
+                    .context("Failed to make lot")?;
+                self.save_lot(new_lot.clone())
+                    .await
+                    .context("Failed to make lot")?;
+                self.assign_lot(new_lot)
+                    .await
+                    .context("Failed to assign lot")?;
             }
             _ => (),
         }
@@ -61,90 +88,85 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self))]
-    fn make_lot(
+    async fn make_lot(
         &self,
         id: &str,
         ticker: String,
         timestamp: DateTime<Utc>,
         price: Decimal,
         position_quantity: Decimal,
-    ) -> Lot {
-        let (previous_quantity, previous_price) = self.previous_fill_data(id);
+    ) -> Result<Lot> {
+        let (previous_quantity, previous_price) = self.previous_fill_data(id).await?;
         let new_quantity = position_quantity - previous_quantity;
         let new_price =
             (price * position_quantity - previous_quantity * previous_price) / new_quantity;
-        Lot::new(ticker, timestamp, new_price, new_quantity)
+        Ok(Lot::new(
+            id.to_string(),
+            ticker,
+            timestamp,
+            new_price,
+            new_quantity,
+        ))
     }
 
     #[tracing::instrument(skip(self))]
-    fn previous_fill_data(&self, order_id: &str) -> (Decimal, Decimal) {
-        let previous_lots = self.partially_filled_lots.get_vec(order_id);
-        previous_lots
-            .map(|lots| {
-                lots.iter().fold(
-                    (Decimal::new(0, 0), Decimal::new(1, 0)),
-                    |(shares, price), lot| {
-                        (
-                            shares + lot.shares,
-                            (price * shares + lot.price) / (shares + lot.shares),
-                        )
-                    },
+    async fn previous_fill_data(&self, order_id: &str) -> Result<(Decimal, Decimal)> {
+        let previous_lots = self
+            .get_lots_by_order_id(order_id)
+            .await
+            .context("Failed to get lots")?;
+        let (prev_qty, prev_price) = previous_lots.iter().fold(
+            (Decimal::new(0, 0), Decimal::new(1, 0)),
+            |(shares, price), lot| {
+                (
+                    shares + lot.shares,
+                    (price * shares + lot.price) / (shares + lot.shares),
                 )
-            })
-            .unwrap_or_else(|| (Decimal::new(0, 0), Decimal::new(1, 0)))
+            },
+        );
+        Ok((prev_qty, prev_price))
     }
 
     #[tracing::instrument(skip(self))]
-    fn save_partially_filled_order_lot(&mut self, order_id: String, lot: Lot) {
-        self.partially_filled_lots.insert(order_id, lot);
-    }
-
-    #[tracing::instrument(skip(self))]
-    fn assign_lot(&mut self, lot: Lot) {
-        let claims = self.get_claims(&lot.ticker);
-        if let Some(claims) = claims {
-            let allocations = split_lot(claims, &lot);
-            self.delete_claims_from_allocations(&allocations);
-            self.save_allocations(&allocations);
-        }
-    }
-
-    #[tracing::instrument(skip(self))]
-    fn get_claims(&self, ticker: &str) -> Option<&Vec<Claim>> {
-        self.unfilled_claims.get_vec(ticker)
-    }
-
-    #[tracing::instrument(skip(self, allocations))]
-    fn delete_claims_from_allocations(&mut self, allocations: &[Allocation]) {
+    async fn assign_lot(&mut self, lot: Lot) -> Result<()> {
+        let claims = self
+            .get_claims_by_ticker(&lot.ticker)
+            .await
+            .context("Failed to get claim")?;
+        let allocations = split_lot(&claims, &lot);
         for allocation in allocations {
-            let claims = self.unfilled_claims.get_vec_mut(&allocation.ticker);
-            if let Some(claims) = claims {
-                for claim in claims {
-                    if allocation.claim_id == Some(claim.id) {
-                        match claim.amount {
-                            AmountSpec::Dollars(dollars) => {
-                                let new_dollars = dollars - allocation.basis;
-                                claim.amount = AmountSpec::Dollars(new_dollars);
-                            }
-                            AmountSpec::Shares(shares) => {
-                                let new_shares = shares - allocation.shares;
-                                claim.amount = AmountSpec::Shares(new_shares);
-                            }
-                            _ => unimplemented!(),
-                        }
-                    }
-                }
-            }
+            self.adjust_claim(&allocation)
+                .await
+                .context("Failed to adjust claim")?;
+            self.save_allocation(allocation)
+                .await
+                .context("Failed to save allocation")?;
         }
-        self.unfilled_claims.retain(|_, claim| match claim.amount {
-            AmountSpec::Dollars(dollars) => !dollars.is_zero(),
-            AmountSpec::Shares(shares) => !shares.is_zero(),
-            _ => unimplemented!(),
-        });
+        Ok(())
     }
 
-    #[tracing::instrument(skip(self, allocations))]
-    fn save_allocations(&mut self, allocations: &[Allocation]) {
-        self.allocations.extend_from_slice(allocations)
+    #[tracing::instrument(skip(self, allocation))]
+    async fn adjust_claim(&self, allocation: &Allocation) -> Result<()> {
+        if let Some(claim_id) = allocation.claim_id {
+            let claim = self
+                .get_claim_by_id(claim_id)
+                .await
+                .context("Failed to get claim")?;
+            let amount = match claim.amount {
+                AmountSpec::Dollars(dollars) => {
+                    let new_dollars = dollars - allocation.basis;
+                    AmountSpec::Dollars(new_dollars)
+                }
+                AmountSpec::Shares(shares) => {
+                    let new_shares = shares - allocation.shares;
+                    AmountSpec::Shares(new_shares)
+                }
+                _ => unimplemented!(),
+            };
+            self.update_claim_amount(claim_id, amount)
+                .await
+                .context("Failed to update claim amount")?;
+        };
+        Ok(())
     }
 }

@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use kafka_settings::{consumer, producer};
-//use sqlx::postgres::PgPoolOptions;
 use tokio::sync::mpsc::unbounded_channel;
+use tokio_postgres::{connect, NoTls};
+use tracing::error;
 
 mod intent_scheduler;
 mod manager;
@@ -12,6 +13,11 @@ use manager::OrderManager;
 use order_sender::OrderSender;
 pub use settings::Settings;
 
+mod embedded {
+    use refinery::embed_migrations;
+    embed_migrations!("migrations");
+}
+
 pub async fn run(settings: Settings) -> Result<()> {
     let consumer = consumer(&settings.kafka).context("Failed to create kafka consumer")?;
     let producer = producer(&settings.kafka).context("Failed to create kafka producer")?;
@@ -20,19 +26,25 @@ pub async fn run(settings: Settings) -> Result<()> {
     let (scheduled_intents_tx2, scheduled_intents_rx2) = unbounded_channel();
     let order_sender = OrderSender::new(producer, order_rx);
     let intent_scheduler = IntentScheduler::new(scheduled_intents_tx1, scheduled_intents_rx2);
-    //let pool = PgPoolOptions::new()
-    //    .max_connections(5)
-    //    .connect(&format!(
-    //        "{}/{}",
-    //        settings.database.url, settings.database.name,
-    //    ))
-    //    .await?;
+    let (mut client, connection) = connect(
+        &format!("{}/{}", settings.database.url, settings.database.name,),
+        NoTls,
+    )
+    .await?;
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            error!("connection error: {}", e);
+        }
+    });
+    embedded::migrations::runner()
+        .run_async(&mut client)
+        .await?;
     let order_manager = OrderManager::new(
         consumer,
         scheduled_intents_tx2,
         scheduled_intents_rx1,
         order_tx,
-        //    pool,
+        client,
     );
     tokio::join!(
         order_manager.run(),

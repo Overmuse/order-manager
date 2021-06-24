@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::{error, info};
 
-pub struct OrderSender {
+pub struct PriceUpdater {
     producer: FutureProducer,
     order_queue: UnboundedReceiver<OrderIntent>,
 }

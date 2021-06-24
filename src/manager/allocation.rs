@@ -6,34 +6,41 @@ use tracing::trace;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) enum Owner {
+pub(crate) enum Owner {
     House,
     Strategy(String, Option<String>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct Claim {
+pub(crate) struct Claim {
     pub id: Uuid,
     pub strategy: String,
     pub sub_strategy: Option<String>,
+    pub ticker: String,
     pub amount: AmountSpec,
 }
 
 impl Claim {
     #[tracing::instrument]
-    pub(super) fn new(strategy: String, sub_strategy: Option<String>, amount: AmountSpec) -> Self {
+    pub(super) fn new(
+        strategy: String,
+        sub_strategy: Option<String>,
+        ticker: String,
+        amount: AmountSpec,
+    ) -> Self {
         trace!("New Claim");
         Self {
             id: Uuid::new_v4(),
             strategy,
             sub_strategy,
+            ticker,
             amount,
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub(super) struct Allocation {
+pub(crate) struct Allocation {
     pub owner: Owner,
     pub claim_id: Option<Uuid>,
     pub lot_id: Uuid,
@@ -44,7 +51,7 @@ pub(super) struct Allocation {
 
 impl Allocation {
     #[tracing::instrument]
-    pub(super) fn new(
+    pub(crate) fn new(
         owner: Owner,
         claim_id: Option<Uuid>,
         lot_id: Uuid,
@@ -72,6 +79,9 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     for claim in claims {
         let (basis, shares) = match claim.amount {
             AmountSpec::Dollars(dollars) => {
+                if dollars.is_zero() {
+                    continue;
+                }
                 let mut allocated_dollars = dollars.abs().min(remaining_basis.abs());
                 if dollars.is_sign_negative() {
                     allocated_dollars.set_sign_negative(true)
@@ -79,6 +89,9 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 (allocated_dollars, allocated_dollars / lot.price)
             }
             AmountSpec::Shares(shares) => {
+                if shares.is_zero() {
+                    continue;
+                }
                 let mut allocated_shares = shares.abs().min(remaining_shares.abs());
                 if shares.is_sign_negative() {
                     allocated_shares.set_sign_negative(true)
@@ -114,7 +127,7 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(super) struct Position {
+pub(crate) struct Position {
     pub owner: Owner,
     pub ticker: String,
     pub shares: Decimal,
@@ -123,7 +136,7 @@ pub(super) struct Position {
 
 impl Position {
     #[tracing::instrument]
-    pub(super) fn new(owner: Owner, ticker: String, shares: Decimal, basis: Decimal) -> Self {
+    pub fn new(owner: Owner, ticker: String, shares: Decimal, basis: Decimal) -> Self {
         trace!("New Position");
         Self {
             owner,
@@ -133,23 +146,12 @@ impl Position {
         }
     }
 
-    #[tracing::instrument(skip(allocations))]
-    pub(super) fn from_allocations(allocations: &[Allocation]) -> Self {
-        let ticker = allocations[0].ticker.clone();
-        let owner = allocations[0].owner.clone();
-        let (shares, basis) =
-            allocations
-                .iter()
-                .fold((Decimal::ZERO, Decimal::ZERO), |acc, allocation| {
-                    if allocation.ticker != ticker {
-                        panic!("Cannot build position out of allocations from different tickers")
-                    }
-                    if allocation.owner != owner {
-                        panic!("Cannout build position out of allocations of different owners")
-                    }
-                    (acc.0 + allocation.shares, acc.1 + allocation.basis)
-                });
-        Self::new(owner, ticker, shares, basis)
+    pub fn is_long(&self) -> bool {
+        self.shares > Decimal::ZERO
+    }
+
+    pub fn is_short(&self) -> bool {
+        self.shares < Decimal::ZERO
     }
 }
 
@@ -161,16 +163,23 @@ mod test {
     #[test]
     fn test_split_lot_with_remainder() {
         let lot = Lot::new(
+            "A".into(),
             "AAPL".into(),
             Utc::now(),
             Decimal::new(100, 0),
             Decimal::new(10, 0),
         );
         let claims = vec![
-            Claim::new("A".into(), None, AmountSpec::Dollars(Decimal::new(400, 0))),
+            Claim::new(
+                "A".into(),
+                None,
+                "AAPL".into(),
+                AmountSpec::Dollars(Decimal::new(400, 0)),
+            ),
             Claim::new(
                 "B".into(),
                 Some("B2".into()),
+                "AAPL".into(),
                 AmountSpec::Shares(Decimal::new(25, 1)),
             ),
         ];
