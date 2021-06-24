@@ -38,11 +38,11 @@ impl OrderManager {
         if intent.is_expired() {
             // Intent has already expired, so don't do anything
             debug!("Expired intent");
-            return Ok(());
+            Ok(())
         } else if !intent.is_active() {
             // Not ready to transmit intent yet
             debug!("Sending intent to scheduler");
-            return self.schedule_position_intent(intent);
+            self.schedule_position_intent(intent)
         } else {
             debug!("Evaluating intent");
             self.evaluate_intent(intent).await
