@@ -17,6 +17,7 @@ kafka-settings = {git = "ssh://git@github.com/Overmuse/kafka-settings.git", tag 
 num-traits = "0.2.14"
 position-intents = {git = "ssh://git@github.com/Overmuse/position-intents.git", tag = "v0.6.0" }
 rdkafka = { version = "0.26.0", features = ["ssl-vendored"] }
+refinery = { version = "0.5.0", features = ["tokio-postgres"] }
 rust_decimal = { version = "1.14.1", features = ["tokio-pg"] }
 serde = "1.0.124"
 serde_json = "1.0.64"

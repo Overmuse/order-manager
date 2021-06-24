@@ -54,16 +54,16 @@ pub async fn setup(
         .unwrap();
 
     debug!("Creating database");
-    std::process::Command::new("dbmate")
-        .arg("--wait")
-        .arg("--url")
-        .arg(format!(
-            "{}/{}?sslmode=disable",
-            database_address, database_name
-        ))
-        .arg("up")
-        .output()
-        .unwrap();
+    // std::process::Command::new("dbmate")
+    //     .arg("--wait")
+    //     .arg("--url")
+    //     .arg(format!(
+    //         "{}/{}?sslmode=disable",
+    //         database_address, database_name
+    //     ))
+    //     .arg("up")
+    //     .output()
+    //     .unwrap();
 
     (admin, admin_options, consumer, producer)
 }

@@ -46,7 +46,7 @@ async fn receive_oi(consumer: &StreamConsumer) -> Result<OrderIntent> {
 #[tokio::test]
 async fn main() -> Result<()> {
     let database_address = "postgres://postgres:password@localhost:5432";
-    let database_name = Uuid::new_v4().to_string();
+    let database_name = "order-manager";
     let (admin, admin_options, consumer, producer) = setup(database_address, &database_name).await;
     debug!("Subscribing to topics");
     consumer.subscribe(&[&"order-intents"]).unwrap();

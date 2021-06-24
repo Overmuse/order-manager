@@ -13,6 +13,11 @@ use manager::OrderManager;
 use order_sender::OrderSender;
 pub use settings::Settings;
 
+mod embedded {
+    use refinery::embed_migrations;
+    embed_migrations!("migrations");
+}
+
 pub async fn run(settings: Settings) -> Result<()> {
     let consumer = consumer(&settings.kafka).context("Failed to create kafka consumer")?;
     let producer = producer(&settings.kafka).context("Failed to create kafka producer")?;
@@ -21,7 +26,7 @@ pub async fn run(settings: Settings) -> Result<()> {
     let (scheduled_intents_tx2, scheduled_intents_rx2) = unbounded_channel();
     let order_sender = OrderSender::new(producer, order_rx);
     let intent_scheduler = IntentScheduler::new(scheduled_intents_tx1, scheduled_intents_rx2);
-    let (client, connection) = connect(
+    let (mut client, connection) = connect(
         &format!("{}/{}", settings.database.url, settings.database.name,),
         NoTls,
     )
@@ -31,7 +36,9 @@ pub async fn run(settings: Settings) -> Result<()> {
             error!("connection error: {}", e);
         }
     });
-
+    embedded::migrations::runner()
+        .run_async(&mut client)
+        .await?;
     let order_manager = OrderManager::new(
         consumer,
         scheduled_intents_tx2,

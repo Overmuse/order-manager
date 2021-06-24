@@ -1,4 +1,3 @@
--- migrate:up
 CREATE TABLE IF NOT EXISTS claims
 (
     id           UUID PRIMARY KEY,
@@ -8,6 +7,3 @@ CREATE TABLE IF NOT EXISTS claims
     amount       NUMERIC NOT NULL,
     unit         TEXT NOT NULL
 )
-
--- migrate:down
-DROP TABLE IF EXISTS claims;

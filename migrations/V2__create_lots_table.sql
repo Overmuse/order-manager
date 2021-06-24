@@ -1,4 +1,3 @@
--- migrate:up
 CREATE TABLE IF NOT EXISTS lots
 (
     id        UUID PRIMARY KEY,
@@ -8,6 +7,3 @@ CREATE TABLE IF NOT EXISTS lots
     price     NUMERIC NOT NULL,
     shares    NUMERIC NOT NULL
 )
-
--- migrate:down
-DROP TABLE IF EXISTS lots;

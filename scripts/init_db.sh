@@ -22,7 +22,3 @@ docker run \
   -d postgres \
   postgres -N 1000
 fi
-
-export DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}?sslmode=disable
-dbmate --wait up
-
