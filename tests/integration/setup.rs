@@ -8,10 +8,7 @@ use rdkafka::{
 use tracing::{debug, subscriber::set_global_default};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-pub async fn setup(
-    database_address: &str,
-    database_name: &str,
-) -> (
+pub async fn setup() -> (
     AdminClient<DefaultClientContext>,
     AdminOptions,
     StreamConsumer,
