@@ -47,7 +47,7 @@ async fn receive_oi(consumer: &StreamConsumer) -> Result<OrderIntent> {
 async fn main() -> Result<()> {
     let database_address = "postgres://postgres:password@localhost:5432";
     let database_name = "order-manager";
-    let (admin, admin_options, consumer, producer) = setup(database_address, &database_name).await;
+    let (admin, admin_options, consumer, producer) = setup().await;
     debug!("Subscribing to topics");
     consumer.subscribe(&[&"order-intents"]).unwrap();
     consumer

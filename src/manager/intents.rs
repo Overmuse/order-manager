@@ -99,7 +99,7 @@ impl OrderManager {
             strategy_shares,
             total_shares,
             pending_shares,
-        ) {
+        )? {
             (None, None, None) => {
                 debug!("No trades generated");
                 Ok(())
@@ -230,11 +230,11 @@ impl OrderManager {
         strategy_shares: Decimal,
         total_shares: Decimal,
         pending_shares: Decimal,
-    ) -> (Option<Claim>, Option<OrderIntent>, Option<OrderIntent>) {
+    ) -> Result<(Option<Claim>, Option<OrderIntent>, Option<OrderIntent>)> {
         match intent.update_policy {
             UpdatePolicy::Retain => {
                 debug!("UpdatePolicy::Retain: No trading needed");
-                return (None, None, None);
+                return Ok((None, None, None));
             }
             UpdatePolicy::RetainLong => {
                 if strategy_shares > Decimal::ZERO {
@@ -242,7 +242,7 @@ impl OrderManager {
                         "UpdatePolicy::RetainLong and position {}: No trading needed",
                         strategy_shares
                     );
-                    return (None, None, None);
+                    return Ok((None, None, None));
                 }
             }
             UpdatePolicy::RetainShort => {
@@ -251,7 +251,7 @@ impl OrderManager {
                         "UpdatePolicy::RetainShort and position {}: No trading needed",
                         strategy_shares
                     );
-                    return (None, None, None);
+                    return Ok((None, None, None));
                 }
             }
             _ => (),
@@ -265,6 +265,9 @@ impl OrderManager {
                     .or(intent.limit_price)
                     .or(intent.stop_price)
                     .expect("Need either limit price, stop price or decision price");
+                if price.is_zero() {
+                    return Err(anyhow!("Price of intent cannot be zero"));
+                }
                 dollars / price - strategy_shares
             }
             AmountSpec::Shares(shares) => shares - strategy_shares,
@@ -273,7 +276,7 @@ impl OrderManager {
         };
         if diff_shares.is_zero() {
             debug!("No change in shares: No trading needed");
-            return (None, None, None);
+            return Ok((None, None, None));
         }
         let claim = Claim::new(
             intent.strategy.clone(),
@@ -291,7 +294,7 @@ impl OrderManager {
                 intent.limit_price,
                 intent.stop_price,
             );
-            (Some(claim), Some(trade), None)
+            Ok((Some(claim), Some(trade), None))
         } else {
             let sent = make_order_intent(
                 &intent.id.to_string(),
@@ -307,7 +310,7 @@ impl OrderManager {
                 intent.limit_price,
                 intent.stop_price,
             );
-            (Some(claim), Some(sent), Some(saved))
+            Ok((Some(claim), Some(sent), Some(saved)))
         }
     }
 }
