@@ -2,6 +2,7 @@ use super::Lot;
 use position_intents::AmountSpec;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Error, Formatter};
 use tracing::trace;
 use uuid::Uuid;
 
@@ -9,6 +10,23 @@ use uuid::Uuid;
 pub(crate) enum Owner {
     House,
     Strategy(String, Option<String>),
+}
+
+impl Display for Owner {
+    fn fmt(&self, formatter: &mut Formatter) -> std::result::Result<(), Error> {
+        match self {
+            Owner::House => formatter.write_str("House"),
+            Owner::Strategy(strategy, sub_strategy) => {
+                if let Some(sub_strategy) = sub_strategy {
+                    formatter.write_str(strategy)?;
+                    formatter.write_str(":")?;
+                    formatter.write_str(sub_strategy)
+                } else {
+                    formatter.write_str(strategy)
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -21,14 +39,14 @@ pub(crate) struct Claim {
 }
 
 impl Claim {
-    #[tracing::instrument]
+    #[tracing::instrument(skip(strategy, sub_strategy, ticker, amount))]
     pub(super) fn new(
         strategy: String,
         sub_strategy: Option<String>,
         ticker: String,
         amount: AmountSpec,
     ) -> Self {
-        trace!("New Claim");
+        trace!(%strategy, ?sub_strategy, %ticker, ?amount, "New Claim");
         Self {
             id: Uuid::new_v4(),
             strategy,
@@ -50,7 +68,7 @@ pub(crate) struct Allocation {
 }
 
 impl Allocation {
-    #[tracing::instrument]
+    #[tracing::instrument(skip(owner, claim_id, lot_id, ticker, shares, basis))]
     pub(crate) fn new(
         owner: Owner,
         claim_id: Option<Uuid>,
@@ -59,7 +77,7 @@ impl Allocation {
         shares: Decimal,
         basis: Decimal,
     ) -> Self {
-        trace!("New Allocation");
+        trace!(%owner, ?claim_id, %lot_id, %ticker, %shares, %basis, "New Allocation");
         Self {
             owner,
             claim_id,
@@ -135,9 +153,9 @@ pub(crate) struct Position {
 }
 
 impl Position {
-    #[tracing::instrument]
+    #[tracing::instrument(skip(owner, ticker, shares, basis))]
     pub fn new(owner: Owner, ticker: String, shares: Decimal, basis: Decimal) -> Self {
-        trace!("New Position");
+        trace!(%owner, %ticker, %shares, %basis, "New Position");
         Self {
             owner,
             ticker,

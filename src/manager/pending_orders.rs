@@ -6,7 +6,9 @@ pub(crate) struct PendingOrder {
 }
 
 impl PendingOrder {
+    #[tracing::instrument(skip(id, ticker, qty))]
     pub fn new(id: String, ticker: String, qty: i32) -> Self {
+        tracing::trace!(%id, %ticker, %qty, "New PendingOrder");
         Self {
             id,
             ticker,

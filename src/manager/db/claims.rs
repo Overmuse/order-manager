@@ -6,9 +6,9 @@ use tracing::trace;
 use uuid::Uuid;
 
 impl OrderManager {
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, ticker))]
     pub(crate) async fn get_claims_by_ticker(&self, ticker: &str) -> Result<Vec<Claim>> {
-        trace!("Getting claims");
+        trace!(ticker, "Getting claims");
         self.db_client
             .query("SELECT * FROM claims WHERE ticker = $1", &[&ticker])
             .await?
@@ -25,9 +25,9 @@ impl OrderManager {
             .collect()
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, id))]
     pub(crate) async fn get_claim_by_id(&self, id: Uuid) -> Result<Claim> {
-        trace!("Getting claim");
+        trace!(%id, "Getting claim");
         let row = self
             .db_client
             .query_one("SELECT * FROM claims WHERE id = $1", &[&id])
@@ -41,8 +41,9 @@ impl OrderManager {
         })
     }
 
+    #[tracing::instrument(skip(self, id, amount))]
     pub(crate) async fn update_claim_amount(&self, id: Uuid, amount: AmountSpec) -> Result<()> {
-        trace!("Updating claim amount");
+        trace!(%id, ?amount, "Updating claim amount");
         let (amount, unit) = split_amount_spec(amount);
         self.db_client
             .execute(
@@ -53,18 +54,18 @@ impl OrderManager {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, id))]
     pub(crate) async fn delete_claim_by_id(&self, id: Uuid) -> Result<()> {
-        trace!("Deleting claim");
+        trace!(%id, "Deleting claim");
         self.db_client
             .execute("DELETE FROM claims WHERE id = $1;", &[&id])
             .await?;
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, claim), fields(%claim.id))]
+    #[tracing::instrument(skip(self, claim))]
     pub(crate) async fn save_claim(&self, claim: Claim) -> Result<()> {
-        trace!("Saving claim");
+        trace!(id = %claim.id, "Saving claim");
         let (amount, unit) = split_amount_spec(claim.amount);
         self.db_client.execute("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);", &[
             &claim.id,

@@ -87,7 +87,7 @@ impl OrderManager {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, ticker, timestamp, price, position_quantity))]
     async fn make_lot(
         &self,
         id: &str,
@@ -109,7 +109,7 @@ impl OrderManager {
         ))
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, order_id))]
     async fn previous_fill_data(&self, order_id: &str) -> Result<(Decimal, Decimal)> {
         let previous_lots = self
             .get_lots_by_order_id(order_id)
@@ -127,7 +127,7 @@ impl OrderManager {
         Ok((prev_qty, prev_price))
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, lot))]
     async fn assign_lot(&mut self, lot: Lot) -> Result<()> {
         let claims = self
             .get_claims_by_ticker(&lot.ticker)

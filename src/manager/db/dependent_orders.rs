@@ -5,13 +5,13 @@ use anyhow::{anyhow, Result};
 use tracing::trace;
 
 impl OrderManager {
-    #[tracing::instrument(skip(self, dependent_order))]
+    #[tracing::instrument(skip(self, id, dependent_order))]
     pub(crate) async fn save_dependent_order(
         &self,
         id: &str,
         dependent_order: OrderIntent,
     ) -> Result<()> {
-        trace!("Saving dependent order");
+        trace!(id, "Saving dependent order");
         let (order_type, limit_price, stop_price) = match dependent_order.order_type {
             OrderType::Market => ("market", None, None),
             OrderType::Limit { limit_price } => ("limit", Some(limit_price), None),
@@ -43,9 +43,9 @@ impl OrderManager {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, id))]
     pub(crate) async fn take_dependent_orders(&self, id: &str) -> Result<Vec<OrderIntent>> {
-        trace!("Saving dependent order");
+        trace!(id, "Saving dependent order");
         self.db_client
             .query(
                 "DELETE FROM dependent_orders WHERE dependent_id = $1 RETURNING *",
