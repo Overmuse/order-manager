@@ -193,6 +193,7 @@ impl OrderManager {
         }
     }
 
+    #[tracing::instrument(skip(self, id, position), fields(position.ticker))]
     async fn close_position(&self, id: &str, position: Position) -> Result<()> {
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
             let order_intent =
@@ -222,7 +223,14 @@ impl OrderManager {
         }
     }
 
-    #[tracing::instrument(skip(self, intent))]
+    #[tracing::instrument(skip(
+        self,
+        intent,
+        ticker,
+        strategy_shares,
+        total_shares,
+        pending_shares
+    ))]
     fn make_orders(
         &self,
         intent: &PositionIntent,
@@ -315,7 +323,7 @@ impl OrderManager {
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(prefix, ticker, qty, limit_price, stop_price))]
 fn make_order_intent(
     prefix: &str,
     ticker: &str,

@@ -14,7 +14,7 @@ pub struct Lot {
 }
 
 impl Lot {
-    #[tracing::instrument]
+    #[tracing::instrument(skip(order_id, ticker, fill_time, price, shares))]
     pub fn new(
         order_id: String,
         ticker: String,
@@ -22,6 +22,7 @@ impl Lot {
         price: Decimal,
         shares: Decimal,
     ) -> Self {
+        tracing::trace!(%order_id, %ticker, %fill_time, %price, %shares, "New Lot");
         Self {
             id: Uuid::new_v4(),
             order_id,

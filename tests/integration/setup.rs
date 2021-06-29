@@ -22,6 +22,7 @@ pub async fn setup() -> (
         .unwrap();
     let admin_options = AdminOptions::new();
     let subscriber = FmtSubscriber::builder()
+        .json()
         .with_env_filter(EnvFilter::from_default_env())
         .finish();
     set_global_default(subscriber).unwrap();
@@ -51,16 +52,6 @@ pub async fn setup() -> (
         .unwrap();
 
     debug!("Creating database");
-    // std::process::Command::new("dbmate")
-    //     .arg("--wait")
-    //     .arg("--url")
-    //     .arg(format!(
-    //         "{}/{}?sslmode=disable",
-    //         database_address, database_name
-    //     ))
-    //     .arg("up")
-    //     .output()
-    //     .unwrap();
 
     (admin, admin_options, consumer, producer)
 }

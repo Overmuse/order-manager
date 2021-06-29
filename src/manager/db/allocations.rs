@@ -28,7 +28,7 @@ impl OrderManager {
             .collect()
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, owner))]
     pub(crate) async fn get_positions_by_owner(&self, owner: Owner) -> Result<Vec<Position>> {
         let (owner, sub_owner) = match owner {
             Owner::House => ("house".to_string(), None),
@@ -62,7 +62,7 @@ impl OrderManager {
             .collect()
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, ticker))]
     pub(crate) async fn get_positions_by_ticker(&self, ticker: &str) -> Result<Vec<Position>> {
         self.db_client
             .query("SELECT owner, sub_owner, ticker, sum(shares), sum(basis) FROM allocations WHERE ticker = $1 GROUP BY owner, sub_owner, ticker", &[&ticker])

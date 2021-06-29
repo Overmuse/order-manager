@@ -10,7 +10,7 @@ impl OrderManager {
             .await
             .context("Failed to take and delete dependent order")?;
         if !orders.is_empty() {
-            debug!("Triggering dependent orders");
+            debug!(id, "Triggering dependent orders");
             for order in orders {
                 self.order_sender
                     .send(order)
