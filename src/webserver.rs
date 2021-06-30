@@ -1,5 +1,6 @@
 use crate::db;
 use std::convert::Infallible;
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::sync::Arc;
 use tokio_postgres::Client;
 use warp::Filter;
@@ -37,7 +38,7 @@ async fn get_pending_orders(db: Db) -> Result<impl warp::Reply, warp::Rejection>
 }
 
 #[tracing::instrument(skip(db))]
-pub async fn run(db: Db) {
+pub async fn run(port: u16, db: Db) {
     let health = warp::path!("health").map(|| "");
     let allocations = warp::path("allocations")
         .and(warp::get())
@@ -61,5 +62,6 @@ pub async fn run(db: Db) {
         .or(lots)
         .or(claims)
         .or(pending_orders);
-    warp::serve(routes).run(([0, 0, 0, 0], 8000)).await
+    let address = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port);
+    warp::serve(routes).run(address).await
 }

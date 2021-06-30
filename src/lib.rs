@@ -51,7 +51,7 @@ pub async fn run(settings: Settings) -> Result<()> {
         client.clone(),
     );
     tokio::join!(
-        webserver::run(client),
+        webserver::run(settings.webserver.port, client),
         order_manager.run(),
         order_sender.run(),
         intent_scheduler.run()
