@@ -1,19 +1,16 @@
 use crate::manager::PendingOrder;
 use anyhow::Result;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio_postgres::Client;
 use tracing::trace;
 
 #[tracing::instrument(skip(client, ticker))]
 pub(crate) async fn get_pending_order_amount_by_ticker(
-    client: Arc<Mutex<Client>>,
+    client: Arc<Client>,
     ticker: &str,
 ) -> Result<Option<i32>> {
     trace!(ticker, "Getting pending order amount");
     client
-        .lock()
-        .await
         .query_opt(
             "SELECT pending_quantity FROM pending_orders WHERE ticker = $1",
             &[&ticker],
@@ -24,11 +21,9 @@ pub(crate) async fn get_pending_order_amount_by_ticker(
 }
 
 #[tracing::instrument(skip(client))]
-pub(crate) async fn get_pending_orders(client: Arc<Mutex<Client>>) -> Result<Vec<PendingOrder>> {
+pub(crate) async fn get_pending_orders(client: Arc<Client>) -> Result<Vec<PendingOrder>> {
     trace!("Getting pending orders");
     client
-        .lock()
-        .await
         .query("SELECT * FROM pending_orders", &[])
         .await?
         .iter()
@@ -45,13 +40,11 @@ pub(crate) async fn get_pending_orders(client: Arc<Mutex<Client>>) -> Result<Vec
 
 #[tracing::instrument(skip(client, id))]
 pub(crate) async fn get_pending_order_by_id(
-    client: Arc<Mutex<Client>>,
+    client: Arc<Client>,
     id: &str,
 ) -> Result<Option<PendingOrder>> {
     trace!(id, "Getting pending order");
     client
-        .lock()
-        .await
         .query_opt("SELECT * FROM pending_orders where id = $1", &[&id])
         .await?
         .map(|row| -> Result<PendingOrder> {
@@ -67,14 +60,12 @@ pub(crate) async fn get_pending_order_by_id(
 
 #[tracing::instrument(skip(client, id, qty))]
 pub(crate) async fn update_pending_order_qty(
-    client: Arc<Mutex<Client>>,
+    client: Arc<Client>,
     id: &str,
     qty: i32,
 ) -> Result<()> {
     trace!(id, qty, "Updating pending order");
     client
-        .lock()
-        .await
         .execute(
             "UPDATE pending_orders SET pending_qty = $1 WHERE id = $2",
             &[&qty, &id],
@@ -85,20 +76,18 @@ pub(crate) async fn update_pending_order_qty(
 
 #[tracing::instrument(skip(client, pending_order))]
 pub(crate) async fn save_pending_order(
-    client: Arc<Mutex<Client>>,
+    client: Arc<Client>,
     pending_order: PendingOrder,
 ) -> Result<()> {
     trace!(id = %pending_order.id, "Saving pending order");
-    client.lock().await.execute("INSERT INTO pending_orders (id, ticker, quantity, pending_quantity) VALUES ($1, $2, $3, $4)", &[&pending_order.id, &pending_order.ticker, &pending_order.qty, &pending_order.pending_qty]).await?;
+    client.execute("INSERT INTO pending_orders (id, ticker, quantity, pending_quantity) VALUES ($1, $2, $3, $4)", &[&pending_order.id, &pending_order.ticker, &pending_order.qty, &pending_order.pending_qty]).await?;
     Ok(())
 }
 
 #[tracing::instrument(skip(client, id))]
-pub(crate) async fn delete_pending_order_by_id(client: Arc<Mutex<Client>>, id: &str) -> Result<()> {
+pub(crate) async fn delete_pending_order_by_id(client: Arc<Client>, id: &str) -> Result<()> {
     trace!(id, "Deleting pending order");
     client
-        .lock()
-        .await
         .execute("DELETE FROM pending_orders WHERE id = $1", &[&id])
         .await?;
     Ok(())

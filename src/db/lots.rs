@@ -1,16 +1,13 @@
 use crate::manager::Lot;
 use anyhow::Result;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio_postgres::Client;
 use tracing::trace;
 
 #[tracing::instrument(skip(client))]
-pub(crate) async fn get_lots(client: Arc<Mutex<Client>>) -> Result<Vec<Lot>> {
+pub(crate) async fn get_lots(client: Arc<Client>) -> Result<Vec<Lot>> {
     trace!("Getting lots");
     client
-        .lock()
-        .await
         .query("SELECT * FROM lots", &[])
         .await?
         .into_iter()
@@ -28,14 +25,9 @@ pub(crate) async fn get_lots(client: Arc<Mutex<Client>>) -> Result<Vec<Lot>> {
 }
 
 #[tracing::instrument(skip(client, order_id))]
-pub(crate) async fn get_lots_by_order_id(
-    client: Arc<Mutex<Client>>,
-    order_id: &str,
-) -> Result<Vec<Lot>> {
+pub(crate) async fn get_lots_by_order_id(client: Arc<Client>, order_id: &str) -> Result<Vec<Lot>> {
     trace!(order_id, "Getting lots");
     client
-        .lock()
-        .await
         .query("SELECT * FROM lots WHERE order_id = $1", &[&order_id])
         .await?
         .into_iter()
@@ -53,9 +45,9 @@ pub(crate) async fn get_lots_by_order_id(
 }
 
 #[tracing::instrument(skip(client, lot))]
-pub(crate) async fn save_lot(client: Arc<Mutex<Client>>, lot: Lot) -> Result<()> {
+pub(crate) async fn save_lot(client: Arc<Client>, lot: Lot) -> Result<()> {
     trace!(id = %lot.id, "Saving lot");
-    client.lock().await.execute("INSERT INTO lots (id, order_id, ticker, fill_time, price, shares) VALUES ($1, $2, $3, $4, $5, $6);", &[
+    client.execute("INSERT INTO lots (id, order_id, ticker, fill_time, price, shares) VALUES ($1, $2, $3, $4, $5, $6);", &[
             &lot.id,
             &lot.order_id,
             &lot.ticker,

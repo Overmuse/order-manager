@@ -1,11 +1,10 @@
 use crate::db;
 use std::convert::Infallible;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio_postgres::Client;
 use warp::Filter;
 
-type Db = Arc<Mutex<Client>>;
+type Db = Arc<Client>;
 
 fn with_db(db: Db) -> impl Filter<Extract = (Db,), Error = Infallible> + Clone {
     warp::any().map(move || db.clone())

@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use kafka_settings::{consumer, producer};
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::Mutex;
 use tokio_postgres::{connect, NoTls};
 use tracing::error;
 
@@ -43,7 +42,7 @@ pub async fn run(settings: Settings) -> Result<()> {
     embedded::migrations::runner()
         .run_async(&mut client)
         .await?;
-    let client = Arc::new(Mutex::new(client));
+    let client = Arc::new(client);
     let order_manager = OrderManager::new(
         consumer,
         scheduled_intents_tx2,

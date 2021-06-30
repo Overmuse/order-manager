@@ -3,17 +3,14 @@ use anyhow::Result;
 use position_intents::AmountSpec;
 use rust_decimal::prelude::*;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio_postgres::Client;
 use tracing::trace;
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
-pub(crate) async fn get_claims(client: Arc<Mutex<Client>>) -> Result<Vec<Claim>> {
+pub(crate) async fn get_claims(client: Arc<Client>) -> Result<Vec<Claim>> {
     trace!("Getting claims");
     client
-        .lock()
-        .await
         .query("SELECT * FROM claims", &[])
         .await?
         .into_iter()
@@ -30,14 +27,9 @@ pub(crate) async fn get_claims(client: Arc<Mutex<Client>>) -> Result<Vec<Claim>>
 }
 
 #[tracing::instrument(skip(client, ticker))]
-pub(crate) async fn get_claims_by_ticker(
-    client: Arc<Mutex<Client>>,
-    ticker: &str,
-) -> Result<Vec<Claim>> {
+pub(crate) async fn get_claims_by_ticker(client: Arc<Client>, ticker: &str) -> Result<Vec<Claim>> {
     trace!(ticker, "Getting claims");
     client
-        .lock()
-        .await
         .query("SELECT * FROM claims WHERE ticker = $1", &[&ticker])
         .await?
         .into_iter()
@@ -54,11 +46,9 @@ pub(crate) async fn get_claims_by_ticker(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub(crate) async fn get_claim_by_id(client: Arc<Mutex<Client>>, id: Uuid) -> Result<Claim> {
+pub(crate) async fn get_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<Claim> {
     trace!(%id, "Getting claim");
     let row = client
-        .lock()
-        .await
         .query_one("SELECT * FROM claims WHERE id = $1", &[&id])
         .await?;
     Ok(Claim {
@@ -72,15 +62,13 @@ pub(crate) async fn get_claim_by_id(client: Arc<Mutex<Client>>, id: Uuid) -> Res
 
 #[tracing::instrument(skip(client, id, amount))]
 pub(crate) async fn update_claim_amount(
-    client: Arc<Mutex<Client>>,
+    client: Arc<Client>,
     id: Uuid,
     amount: AmountSpec,
 ) -> Result<()> {
     trace!(%id, ?amount, "Updating claim amount");
     let (amount, unit) = split_amount_spec(amount);
     client
-        .lock()
-        .await
         .execute(
             "UPDATE claims SET amount = $1, unit = $2 WHERE id = $3",
             &[&amount, &unit, &id],
@@ -90,21 +78,19 @@ pub(crate) async fn update_claim_amount(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub(crate) async fn delete_claim_by_id(client: Arc<Mutex<Client>>, id: Uuid) -> Result<()> {
+pub(crate) async fn delete_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<()> {
     trace!(%id, "Deleting claim");
     client
-        .lock()
-        .await
         .execute("DELETE FROM claims WHERE id = $1;", &[&id])
         .await?;
     Ok(())
 }
 
 #[tracing::instrument(skip(client, claim))]
-pub(crate) async fn save_claim(client: Arc<Mutex<Client>>, claim: Claim) -> Result<()> {
+pub(crate) async fn save_claim(client: Arc<Client>, claim: Claim) -> Result<()> {
     trace!(id = %claim.id, "Saving claim");
     let (amount, unit) = split_amount_spec(claim.amount);
-    client.lock().await.execute("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);", &[
+    client.execute("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);", &[
             &claim.id,
             &claim.strategy,
             &claim.sub_strategy,
