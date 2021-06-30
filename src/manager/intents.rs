@@ -72,12 +72,12 @@ impl OrderManager {
         intent: PositionIntent,
         ticker: &str,
     ) -> Result<()> {
-        let pending_shares = db::get_pending_order_amount_by_ticker(&self.db_client, ticker)
+        let pending_shares = db::get_pending_order_amount_by_ticker(self.db_client.clone(), ticker)
             .await
             .context("Failed to get pending order amount")?
             .unwrap_or(0)
             .into();
-        let positions = db::get_positions_by_ticker(&self.db_client, &ticker)
+        let positions = db::get_positions_by_ticker(self.db_client.clone(), &ticker)
             .await
             .context("Failed to get positions")?;
         let strategy_shares = positions
@@ -104,7 +104,7 @@ impl OrderManager {
                 Ok(())
             }
             (Some(claim), Some(sent), None) => {
-                db::save_claim(&self.db_client, claim)
+                db::save_claim(self.db_client.clone(), claim)
                     .await
                     .context("Failed to save claim")?;
                 let qty = match sent.side {
@@ -112,7 +112,7 @@ impl OrderManager {
                     Side::Sell => -(sent.qty.to_isize().unwrap()),
                 };
                 db::save_pending_order(
-                    &self.db_client,
+                    self.db_client.clone(),
                     PendingOrder::new(
                         sent.client_order_id.clone().unwrap(),
                         ticker.to_string(),
@@ -129,13 +129,13 @@ impl OrderManager {
             (Some(claim), Some(sent), Some(saved)) => {
                 debug!("Saving dependent order");
                 db::save_dependent_order(
-                    &self.db_client,
+                    self.db_client.clone(),
                     &sent.client_order_id.clone().unwrap(),
                     saved,
                 )
                 .await
                 .context("Failed to save dependent order")?;
-                db::save_claim(&self.db_client, claim)
+                db::save_claim(self.db_client.clone(), claim)
                     .await
                     .context("Failed to save claim")?;
                 let qty = match sent.side {
@@ -143,7 +143,7 @@ impl OrderManager {
                     Side::Sell => -(sent.qty.to_isize().unwrap()),
                 };
                 db::save_pending_order(
-                    &self.db_client,
+                    self.db_client.clone(),
                     PendingOrder::new(
                         sent.client_order_id.clone().unwrap(),
                         ticker.to_string(),
@@ -171,19 +171,23 @@ impl OrderManager {
                     debug!("UpdatePolicy::Retain: No trading needed");
                     return Ok(());
                 }
-                UpdatePolicy::RetainLong => db::get_positions_by_owner(&self.db_client, owner)
-                    .await
-                    .context("Failed to get positions")?
-                    .into_iter()
-                    .filter(|pos| pos.is_short())
-                    .collect(),
-                UpdatePolicy::RetainShort => db::get_positions_by_owner(&self.db_client, owner)
-                    .await
-                    .context("Failed to get position")?
-                    .into_iter()
-                    .filter(|pos| pos.is_long())
-                    .collect(),
-                UpdatePolicy::Update => db::get_positions_by_owner(&self.db_client, owner)
+                UpdatePolicy::RetainLong => {
+                    db::get_positions_by_owner(self.db_client.clone(), owner)
+                        .await
+                        .context("Failed to get positions")?
+                        .into_iter()
+                        .filter(|pos| pos.is_short())
+                        .collect()
+                }
+                UpdatePolicy::RetainShort => {
+                    db::get_positions_by_owner(self.db_client.clone(), owner)
+                        .await
+                        .context("Failed to get position")?
+                        .into_iter()
+                        .filter(|pos| pos.is_long())
+                        .collect()
+                }
+                UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.clone(), owner)
                     .await
                     .context("Failed to get positions")?,
             };
@@ -210,11 +214,11 @@ impl OrderManager {
                 position.ticker.clone(),
                 AmountSpec::Shares(-position.shares),
             );
-            db::save_claim(&self.db_client, claim)
+            db::save_claim(self.db_client.clone(), claim)
                 .await
                 .context("Failed to save claim")?;
             db::save_pending_order(
-                &self.db_client,
+                self.db_client.clone(),
                 PendingOrder::new(
                     order_intent.client_order_id.clone().unwrap(),
                     position.ticker.to_string(),

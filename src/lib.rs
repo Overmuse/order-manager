@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use kafka_settings::{consumer, producer};
+use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::Mutex;
 use tokio_postgres::{connect, NoTls};
 use tracing::error;
 
@@ -14,7 +16,6 @@ use intent_scheduler::IntentScheduler;
 use manager::OrderManager;
 use order_sender::OrderSender;
 pub use settings::Settings;
-use webserver::WebServer;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -42,16 +43,16 @@ pub async fn run(settings: Settings) -> Result<()> {
     embedded::migrations::runner()
         .run_async(&mut client)
         .await?;
-    let webserver = WebServer::new();
+    let client = Arc::new(Mutex::new(client));
     let order_manager = OrderManager::new(
         consumer,
         scheduled_intents_tx2,
         scheduled_intents_rx1,
         order_tx,
-        client,
+        client.clone(),
     );
     tokio::join!(
-        webserver.run(),
+        webserver::run(client),
         order_manager.run(),
         order_sender.run(),
         intent_scheduler.run()

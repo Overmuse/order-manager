@@ -3,7 +3,11 @@ use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
 use position_intents::PositionIntent;
 use rdkafka::consumer::StreamConsumer;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::sync::Arc;
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    Mutex,
+};
 use tokio_postgres::Client;
 use tracing::{error, info};
 
@@ -25,7 +29,7 @@ pub struct OrderManager {
     scheduler_sender: UnboundedSender<PositionIntent>,
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
     order_sender: UnboundedSender<OrderIntent>,
-    db_client: Client,
+    db_client: Arc<Mutex<Client>>,
 }
 
 impl OrderManager {
@@ -34,7 +38,7 @@ impl OrderManager {
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
         order_sender: UnboundedSender<OrderIntent>,
-        db_client: Client,
+        db_client: Arc<Mutex<Client>>,
     ) -> Self {
         Self {
             kafka_consumer,

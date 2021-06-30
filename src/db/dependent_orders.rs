@@ -1,12 +1,14 @@
 use alpaca::orders::OrderIntent;
 use alpaca::OrderType;
 use anyhow::{anyhow, Result};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio_postgres::Client;
 use tracing::trace;
 
 #[tracing::instrument(skip(client, id, dependent_order))]
 pub(crate) async fn save_dependent_order(
-    client: &Client,
+    client: Arc<Mutex<Client>>,
     id: &str,
     dependent_order: OrderIntent,
 ) -> Result<()> {
@@ -21,7 +23,7 @@ pub(crate) async fn save_dependent_order(
         } => ("stoplimit", Some(limit_price), Some(stop_price)),
         _ => unimplemented!(),
     };
-    client.execute(
+    client.lock().await.execute(
                 "INSERT INTO dependent_orders (dependent_id, symbol, qty, side, order_type, limit_price, stop_price, time_in_force, extended_hours, client_order_id, order_class) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
                 &[
                     &id,
@@ -42,9 +44,14 @@ pub(crate) async fn save_dependent_order(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub(crate) async fn take_dependent_orders(client: &Client, id: &str) -> Result<Vec<OrderIntent>> {
+pub(crate) async fn take_dependent_orders(
+    client: Arc<Mutex<Client>>,
+    id: &str,
+) -> Result<Vec<OrderIntent>> {
     trace!(id, "Saving dependent order");
     client
+        .lock()
+        .await
         .query(
             "DELETE FROM dependent_orders WHERE dependent_id = $1 RETURNING *",
             &[&id],
