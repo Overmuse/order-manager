@@ -4,14 +4,17 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio_postgres::{connect, NoTls};
 use tracing::error;
 
+mod db;
 mod intent_scheduler;
-mod manager;
+pub(crate) mod manager;
 mod order_sender;
 mod settings;
+mod webserver;
 use intent_scheduler::IntentScheduler;
 use manager::OrderManager;
 use order_sender::OrderSender;
 pub use settings::Settings;
+use webserver::WebServer;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -39,6 +42,7 @@ pub async fn run(settings: Settings) -> Result<()> {
     embedded::migrations::runner()
         .run_async(&mut client)
         .await?;
+    let webserver = WebServer::new();
     let order_manager = OrderManager::new(
         consumer,
         scheduled_intents_tx2,
@@ -47,6 +51,7 @@ pub async fn run(settings: Settings) -> Result<()> {
         client,
     );
     tokio::join!(
+        webserver.run(),
         order_manager.run(),
         order_sender.run(),
         intent_scheduler.run()

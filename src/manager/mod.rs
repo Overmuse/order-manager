@@ -8,17 +8,17 @@ use tokio_postgres::Client;
 use tracing::{error, info};
 
 mod allocation;
-mod db;
 mod dependent_orders;
 mod input;
 mod intents;
 mod lot;
 mod order_updates;
 mod pending_orders;
-use allocation::{split_lot, Allocation, Claim, Owner, Position};
+use allocation::split_lot;
+pub(crate) use allocation::{Allocation, Claim, Owner, Position};
 use input::Input;
-use lot::Lot;
-use pending_orders::PendingOrder;
+pub use lot::Lot;
+pub(crate) use pending_orders::PendingOrder;
 
 pub struct OrderManager {
     kafka_consumer: StreamConsumer,
