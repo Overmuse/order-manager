@@ -1,3 +1,6 @@
+use serde::Serialize;
+
+#[derive(Serialize)]
 pub(crate) struct PendingOrder {
     pub id: String,
     pub ticker: String,

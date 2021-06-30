@@ -66,6 +66,7 @@ async fn main() -> Result<()> {
         std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
         std::env::set_var("KAFKA__ACKS", "0");
         std::env::set_var("KAFKA__RETRIES", "0");
+        std::env::set_var("WEBSERVER__PORT", "0");
         let settings = Settings::new();
         tracing::debug!("{:?}", settings);
         let res = run(settings.unwrap()).await;

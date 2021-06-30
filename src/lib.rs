@@ -1,13 +1,16 @@
 use anyhow::{Context, Result};
 use kafka_settings::{consumer, producer};
+use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio_postgres::{connect, NoTls};
 use tracing::error;
 
+mod db;
 mod intent_scheduler;
-mod manager;
+pub(crate) mod manager;
 mod order_sender;
 mod settings;
+mod webserver;
 use intent_scheduler::IntentScheduler;
 use manager::OrderManager;
 use order_sender::OrderSender;
@@ -39,14 +42,16 @@ pub async fn run(settings: Settings) -> Result<()> {
     embedded::migrations::runner()
         .run_async(&mut client)
         .await?;
+    let client = Arc::new(client);
     let order_manager = OrderManager::new(
         consumer,
         scheduled_intents_tx2,
         scheduled_intents_rx1,
         order_tx,
-        client,
+        client.clone(),
     );
     tokio::join!(
+        webserver::run(settings.webserver.port, client),
         order_manager.run(),
         order_sender.run(),
         intent_scheduler.run()

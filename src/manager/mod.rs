@@ -3,29 +3,30 @@ use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
 use position_intents::PositionIntent;
 use rdkafka::consumer::StreamConsumer;
+use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{error, info};
 
 mod allocation;
-mod db;
 mod dependent_orders;
 mod input;
 mod intents;
 mod lot;
 mod order_updates;
 mod pending_orders;
-use allocation::{split_lot, Allocation, Claim, Owner, Position};
+use allocation::split_lot;
+pub(crate) use allocation::{Allocation, Claim, Owner, Position};
 use input::Input;
-use lot::Lot;
-use pending_orders::PendingOrder;
+pub use lot::Lot;
+pub(crate) use pending_orders::PendingOrder;
 
 pub struct OrderManager {
     kafka_consumer: StreamConsumer,
     scheduler_sender: UnboundedSender<PositionIntent>,
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
     order_sender: UnboundedSender<OrderIntent>,
-    db_client: Client,
+    db_client: Arc<Client>,
 }
 
 impl OrderManager {
@@ -34,7 +35,7 @@ impl OrderManager {
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
         order_sender: UnboundedSender<OrderIntent>,
-        db_client: Client,
+        db_client: Arc<Client>,
     ) -> Self {
         Self {
             kafka_consumer,

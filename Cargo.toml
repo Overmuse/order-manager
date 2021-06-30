@@ -1,6 +1,6 @@
 [package]
 name = "order-manager"
-version = "5.0.3"
+version = "6.0.0"
 authors = ["Sebastian Rollen <seb@overmu.se>"]
 edition = "2018"
 
@@ -28,6 +28,7 @@ tokio-util = { version = "0.6.7", features = ["time"] }
 tracing = "0.1.25"
 tracing-subscriber = "0.2.17"
 uuid = "0.8.2"
+warp = "0.3.1"
 
 [dev-dependencies]
 rdkafka = "0.26.0"

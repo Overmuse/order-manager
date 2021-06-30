@@ -9,9 +9,15 @@ pub struct Database {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct WebServerSettings {
+    pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Settings {
     pub database: Database,
     pub kafka: KafkaSettings,
+    pub webserver: WebServerSettings,
 }
 
 impl Settings {
