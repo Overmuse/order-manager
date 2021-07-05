@@ -62,7 +62,7 @@ pub async fn run(port: u16, db: Db) {
         .and(warp::put())
         .and(warp::body::json())
         .and(with_db(db.clone()))
-        .and_then(|id, owner: Owner, db| set_allocation_owner(id, owner, db));
+        .and_then(set_allocation_owner);
     let lots = warp::path("lots")
         .and(warp::get())
         .and(with_db(db.clone()))
