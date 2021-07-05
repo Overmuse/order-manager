@@ -59,6 +59,7 @@ impl Claim {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Allocation {
+    pub id: Uuid,
     pub owner: Owner,
     pub claim_id: Option<Uuid>,
     pub lot_id: Uuid,
@@ -79,6 +80,7 @@ impl Allocation {
     ) -> Self {
         trace!(%owner, ?claim_id, %lot_id, %ticker, %shares, %basis, "New Allocation");
         Self {
+            id: Uuid::new_v4(),
             owner,
             claim_id,
             lot_id,
@@ -205,36 +207,39 @@ mod test {
         assert_eq!(allocations.len(), 3);
         assert_eq!(
             allocations[0],
-            Allocation::new(
-                Owner::Strategy("A".into(), None),
-                Some(claims[0].id),
-                lot.id,
-                "AAPL".into(),
-                Decimal::new(4, 0),
-                Decimal::new(400, 0)
-            )
+            Allocation {
+                id: allocations[0].id,
+                owner: Owner::Strategy("A".into(), None),
+                claim_id: Some(claims[0].id),
+                lot_id: lot.id,
+                ticker: "AAPL".into(),
+                shares: Decimal::new(4, 0),
+                basis: Decimal::new(400, 0)
+            }
         );
         assert_eq!(
             allocations[1],
-            Allocation::new(
-                Owner::Strategy("B".into(), Some("B2".into())),
-                Some(claims[1].id),
-                lot.id,
-                "AAPL".into(),
-                Decimal::new(25, 1),
-                Decimal::new(250, 0)
-            )
+            Allocation {
+                id: allocations[1].id,
+                owner: Owner::Strategy("B".into(), Some("B2".into())),
+                claim_id: Some(claims[1].id),
+                lot_id: lot.id,
+                ticker: "AAPL".into(),
+                shares: Decimal::new(25, 1),
+                basis: Decimal::new(250, 0)
+            }
         );
         assert_eq!(
             allocations[2],
-            Allocation::new(
-                Owner::House,
-                None,
-                lot.id,
-                "AAPL".into(),
-                Decimal::new(35, 1),
-                Decimal::new(350, 0)
-            )
+            Allocation {
+                id: allocations[2].id,
+                owner: Owner::House,
+                claim_id: None,
+                lot_id: lot.id,
+                ticker: "AAPL".into(),
+                shares: Decimal::new(35, 1),
+                basis: Decimal::new(350, 0)
+            }
         );
     }
 }
