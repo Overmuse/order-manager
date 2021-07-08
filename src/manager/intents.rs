@@ -26,7 +26,7 @@ impl PositionIntentExt for PositionIntent {
 
     fn is_active(&self) -> bool {
         if let Some(dt) = self.after {
-            dt >= Utc::now()
+            dt <= Utc::now()
         } else {
             true
         }
