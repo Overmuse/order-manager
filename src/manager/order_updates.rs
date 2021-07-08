@@ -1,5 +1,6 @@
 use super::OrderManager;
 use crate::db;
+use crate::metrics::NUM_TRADES;
 use crate::types::{split_lot, Allocation, Lot};
 use alpaca::{Event, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
@@ -31,6 +32,8 @@ impl OrderManager {
             Event::Fill {
                 price, timestamp, ..
             } => {
+                debug!("Order filled");
+                NUM_TRADES.inc();
                 let new_lot = self
                     .make_lot(&id, ticker, timestamp, price, qty)
                     .await

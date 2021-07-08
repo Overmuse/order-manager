@@ -1,4 +1,5 @@
 use crate::db;
+use crate::metrics::{register_custom_metrics, REGISTRY};
 use crate::types::Owner;
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -51,8 +52,43 @@ async fn get_pending_orders(db: Db) -> Result<impl warp::Reply, warp::Rejection>
     Ok(warp::reply::json(&pending_orders))
 }
 
+async fn metrics_handler() -> Result<impl warp::Reply, warp::Rejection> {
+    use prometheus::Encoder;
+    let encoder = prometheus::TextEncoder::new();
+
+    let mut buffer = Vec::new();
+    if let Err(e) = encoder.encode(&REGISTRY.gather(), &mut buffer) {
+        eprintln!("could not encode custom metrics: {}", e);
+    };
+    let mut res = match String::from_utf8(buffer.clone()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("custom metrics could not be from_utf8'd: {}", e);
+            String::default()
+        }
+    };
+    buffer.clear();
+
+    let mut buffer = Vec::new();
+    if let Err(e) = encoder.encode(&prometheus::gather(), &mut buffer) {
+        eprintln!("could not encode prometheus metrics: {}", e);
+    };
+    let res_custom = match String::from_utf8(buffer.clone()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("prometheus metrics could not be from_utf8'd: {}", e);
+            String::default()
+        }
+    };
+    buffer.clear();
+
+    res.push_str(&res_custom);
+    Ok(res)
+}
+
 #[tracing::instrument(skip(db))]
 pub async fn run(port: u16, db: Db) {
+    register_custom_metrics();
     let health = warp::path!("health").map(|| "");
     let get_allocations = warp::path("allocations")
         .and(warp::get())
@@ -75,13 +111,15 @@ pub async fn run(port: u16, db: Db) {
         .and(warp::get())
         .and(with_db(db.clone()))
         .and_then(get_pending_orders);
+    let metrics = warp::path("metrics").and_then(metrics_handler);
     let routes = warp::get()
         .and(health)
         .or(get_allocations)
         .or(set_allocation_owner)
         .or(lots)
         .or(claims)
-        .or(pending_orders);
+        .or(pending_orders)
+        .or(metrics);
     let address = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port);
     warp::serve(routes).run(address).await
 }
