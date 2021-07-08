@@ -8,6 +8,7 @@ use tracing::error;
 mod db;
 mod intent_scheduler;
 pub mod manager;
+mod metrics;
 mod order_sender;
 mod settings;
 pub mod types;
