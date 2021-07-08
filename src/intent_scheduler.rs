@@ -5,14 +5,14 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::time::delay_queue::DelayQueue;
 use tracing::{debug, info};
 
-pub(super) struct IntentScheduler {
+pub struct IntentScheduler {
     scheduled_intents: DelayQueue<PositionIntent>,
     receiver: UnboundedReceiver<PositionIntent>,
     sender: UnboundedSender<PositionIntent>,
 }
 
 impl IntentScheduler {
-    pub(super) fn new(
+    pub fn new(
         sender: UnboundedSender<PositionIntent>,
         receiver: UnboundedReceiver<PositionIntent>,
     ) -> Self {
@@ -24,7 +24,7 @@ impl IntentScheduler {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) async fn run(mut self) {
+    pub async fn run(mut self) {
         info!("Starting IntentScheduler");
         loop {
             tokio::select! {

@@ -1,5 +1,6 @@
-use super::{split_lot, Allocation, Lot, OrderManager};
+use super::OrderManager;
 use crate::db;
+use crate::types::{split_lot, Allocation, Lot};
 use alpaca::{Event, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -9,7 +10,7 @@ use tracing::debug;
 
 impl OrderManager {
     #[tracing::instrument(skip(self, event), fields(id = %event.order.client_order_id))]
-    pub(super) async fn handle_order_update(&mut self, event: OrderEvent) -> Result<()> {
+    pub async fn handle_order_update(&mut self, event: OrderEvent) -> Result<()> {
         debug!("Handling order update");
         let id = event.order.client_order_id.clone();
         let ticker = event.order.symbol.clone();
@@ -17,18 +18,9 @@ impl OrderManager {
             Side::Buy => Decimal::from_usize(event.order.qty).unwrap(),
             Side::Sell => -Decimal::from_usize(event.order.qty).unwrap(),
         };
+        debug!(status = ?event.event, "Order status update");
         match event.event {
-            Event::Canceled { .. } => {
-                debug!("Order cancelled");
-                db::delete_pending_order_by_id(
-                    self.db_client.clone(),
-                    &event.order.client_order_id,
-                )
-                .await
-                .context("Failed to delete pending order")?;
-            }
-            Event::Expired { .. } => {
-                debug!("Order expired");
+            Event::Canceled { .. } | Event::Expired { .. } | Event::Rejected { .. } => {
                 db::delete_pending_order_by_id(
                     self.db_client.clone(),
                     &event.order.client_order_id,
@@ -39,7 +31,6 @@ impl OrderManager {
             Event::Fill {
                 price, timestamp, ..
             } => {
-                debug!("Order filled");
                 let new_lot = self
                     .make_lot(&id, ticker, timestamp, price, qty)
                     .await
@@ -67,7 +58,6 @@ impl OrderManager {
             Event::PartialFill {
                 price, timestamp, ..
             } => {
-                debug!("Partial fill");
                 let pending_order = db::get_pending_order_by_id(
                     self.db_client.clone(),
                     &event.order.client_order_id,

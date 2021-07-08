@@ -6,7 +6,7 @@ use tokio_postgres::Client;
 use tracing::trace;
 
 #[tracing::instrument(skip(client, id, dependent_order))]
-pub(crate) async fn save_dependent_order(
+pub async fn save_dependent_order(
     client: Arc<Client>,
     id: &str,
     dependent_order: OrderIntent,
@@ -43,10 +43,7 @@ pub(crate) async fn save_dependent_order(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub(crate) async fn take_dependent_orders(
-    client: Arc<Client>,
-    id: &str,
-) -> Result<Vec<OrderIntent>> {
+pub async fn take_dependent_orders(client: Arc<Client>, id: &str) -> Result<Vec<OrderIntent>> {
     trace!(id, "Saving dependent order");
     client
         .query(

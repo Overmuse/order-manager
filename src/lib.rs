@@ -7,9 +7,10 @@ use tracing::error;
 
 mod db;
 mod intent_scheduler;
-pub(crate) mod manager;
+pub mod manager;
 mod order_sender;
 mod settings;
+pub mod types;
 mod webserver;
 use intent_scheduler::IntentScheduler;
 use manager::OrderManager;

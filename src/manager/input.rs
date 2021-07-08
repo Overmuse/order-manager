@@ -9,14 +9,14 @@ use tracing::debug;
 #[derive(Deserialize)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
-pub(super) enum Input {
+pub enum Input {
     PositionIntent(PositionIntent),
     AlpacaMessage(AlpacaMessage),
 }
 
 impl OrderManager {
     #[tracing::instrument(skip(self))]
-    pub(super) async fn receive_message(&mut self) -> Result<Input> {
+    pub async fn receive_message(&mut self) -> Result<Input> {
         tokio::select! {
             kafka_message = self.kafka_consumer.recv() => {
                 debug!("Message received from kafka");

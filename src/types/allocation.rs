@@ -1,64 +1,14 @@
-use super::Lot;
+use super::{Claim, Lot, Owner};
 use position_intents::AmountSpec;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Error, Formatter};
+use std::convert::TryFrom;
+use tokio_postgres::Row;
 use tracing::trace;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(crate) enum Owner {
-    House,
-    Strategy(String, Option<String>),
-}
-
-impl Display for Owner {
-    fn fmt(&self, formatter: &mut Formatter) -> std::result::Result<(), Error> {
-        match self {
-            Owner::House => formatter.write_str("House"),
-            Owner::Strategy(strategy, sub_strategy) => {
-                if let Some(sub_strategy) = sub_strategy {
-                    formatter.write_str(strategy)?;
-                    formatter.write_str(":")?;
-                    formatter.write_str(sub_strategy)
-                } else {
-                    formatter.write_str(strategy)
-                }
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Claim {
-    pub id: Uuid,
-    pub strategy: String,
-    pub sub_strategy: Option<String>,
-    pub ticker: String,
-    pub amount: AmountSpec,
-}
-
-impl Claim {
-    #[tracing::instrument(skip(strategy, sub_strategy, ticker, amount))]
-    pub(super) fn new(
-        strategy: String,
-        sub_strategy: Option<String>,
-        ticker: String,
-        amount: AmountSpec,
-    ) -> Self {
-        trace!(%strategy, ?sub_strategy, %ticker, ?amount, "New Claim");
-        Self {
-            id: Uuid::new_v4(),
-            strategy,
-            sub_strategy,
-            ticker,
-            amount,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub(crate) struct Allocation {
+pub struct Allocation {
     pub id: Uuid,
     pub owner: Owner,
     pub claim_id: Option<Uuid>,
@@ -70,7 +20,7 @@ pub(crate) struct Allocation {
 
 impl Allocation {
     #[tracing::instrument(skip(owner, claim_id, lot_id, ticker, shares, basis))]
-    pub(crate) fn new(
+    pub fn new(
         owner: Owner,
         claim_id: Option<Uuid>,
         lot_id: Uuid,
@@ -91,8 +41,28 @@ impl Allocation {
     }
 }
 
+impl TryFrom<Row> for Allocation {
+    type Error = tokio_postgres::Error;
+    fn try_from(row: Row) -> Result<Self, Self::Error> {
+        let owner = if row.try_get::<usize, &str>(0)? == "House" {
+            Owner::House
+        } else {
+            Owner::Strategy(row.try_get(0)?, row.try_get(1)?)
+        };
+        Ok(Allocation {
+            id: row.try_get(7)?,
+            owner,
+            claim_id: row.try_get(2)?,
+            lot_id: row.try_get(3)?,
+            ticker: row.try_get(4)?,
+            shares: row.try_get(5)?,
+            basis: row.try_get(6)?,
+        })
+    }
+}
+
 #[tracing::instrument(skip(claims, lot))]
-pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
+pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     let mut remaining_shares = lot.shares;
     let mut remaining_basis = lot.shares * lot.price;
     let mut out = Vec::new();
@@ -144,35 +114,6 @@ pub(super) fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     }
 
     out
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Position {
-    pub owner: Owner,
-    pub ticker: String,
-    pub shares: Decimal,
-    pub basis: Decimal,
-}
-
-impl Position {
-    #[tracing::instrument(skip(owner, ticker, shares, basis))]
-    pub fn new(owner: Owner, ticker: String, shares: Decimal, basis: Decimal) -> Self {
-        trace!(%owner, %ticker, %shares, %basis, "New Position");
-        Self {
-            owner,
-            ticker,
-            shares,
-            basis,
-        }
-    }
-
-    pub fn is_long(&self) -> bool {
-        self.shares > Decimal::ZERO
-    }
-
-    pub fn is_short(&self) -> bool {
-        self.shares < Decimal::ZERO
-    }
 }
 
 #[cfg(test)]
