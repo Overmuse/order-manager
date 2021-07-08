@@ -1,71 +1,49 @@
-use crate::manager::Claim;
-use anyhow::Result;
+use crate::types::Claim;
 use position_intents::AmountSpec;
 use rust_decimal::prelude::*;
+use std::convert::TryInto;
 use std::sync::Arc;
-use tokio_postgres::Client;
+use tokio_postgres::{Client, Error};
 use tracing::trace;
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
-pub(crate) async fn get_claims(client: Arc<Client>) -> Result<Vec<Claim>> {
+pub async fn get_claims(client: Arc<Client>) -> Result<Vec<Claim>, Error> {
     trace!("Getting claims");
     client
         .query("SELECT * FROM claims", &[])
         .await?
         .into_iter()
-        .map(|row| -> Result<Claim> {
-            Ok(Claim {
-                id: row.try_get(0)?,
-                strategy: row.try_get(1)?,
-                sub_strategy: row.try_get(2)?,
-                ticker: row.try_get(3)?,
-                amount: unite_amount_spec(row.try_get(4)?, row.try_get(5)?),
-            })
-        })
+        .map(TryInto::try_into)
         .collect()
 }
 
 #[tracing::instrument(skip(client, ticker))]
-pub(crate) async fn get_claims_by_ticker(client: Arc<Client>, ticker: &str) -> Result<Vec<Claim>> {
+pub async fn get_claims_by_ticker(client: Arc<Client>, ticker: &str) -> Result<Vec<Claim>, Error> {
     trace!(ticker, "Getting claims");
     client
         .query("SELECT * FROM claims WHERE ticker = $1", &[&ticker])
         .await?
         .into_iter()
-        .map(|row| -> Result<Claim> {
-            Ok(Claim {
-                id: row.try_get(0)?,
-                strategy: row.try_get(1)?,
-                sub_strategy: row.try_get(2)?,
-                ticker: row.try_get(3)?,
-                amount: unite_amount_spec(row.try_get(4)?, row.try_get(5)?),
-            })
-        })
+        .map(TryInto::try_into)
         .collect()
 }
 
 #[tracing::instrument(skip(client, id))]
-pub(crate) async fn get_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<Claim> {
+pub async fn get_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<Claim, Error> {
     trace!(%id, "Getting claim");
-    let row = client
+    client
         .query_one("SELECT * FROM claims WHERE id = $1", &[&id])
-        .await?;
-    Ok(Claim {
-        id: row.try_get(0)?,
-        strategy: row.try_get(1)?,
-        sub_strategy: row.try_get(2)?,
-        ticker: row.try_get(3)?,
-        amount: unite_amount_spec(row.try_get(4)?, row.try_get(5)?),
-    })
+        .await?
+        .try_into()
 }
 
 #[tracing::instrument(skip(client, id, amount))]
-pub(crate) async fn update_claim_amount(
+pub async fn update_claim_amount(
     client: Arc<Client>,
     id: Uuid,
     amount: AmountSpec,
-) -> Result<()> {
+) -> Result<(), Error> {
     trace!(%id, ?amount, "Updating claim amount");
     let (amount, unit) = split_amount_spec(amount);
     client
@@ -78,7 +56,7 @@ pub(crate) async fn update_claim_amount(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub(crate) async fn delete_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<()> {
+pub async fn delete_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<(), Error> {
     trace!(%id, "Deleting claim");
     client
         .execute("DELETE FROM claims WHERE id = $1;", &[&id])
@@ -87,7 +65,7 @@ pub(crate) async fn delete_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<
 }
 
 #[tracing::instrument(skip(client, claim))]
-pub(crate) async fn save_claim(client: Arc<Client>, claim: Claim) -> Result<()> {
+pub async fn save_claim(client: Arc<Client>, claim: Claim) -> Result<(), Error> {
     trace!(id = %claim.id, "Saving claim");
     let (amount, unit) = split_amount_spec(claim.amount);
     client.execute("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);", &[
@@ -107,15 +85,5 @@ fn split_amount_spec(amount_spec: AmountSpec) -> (Decimal, &'static str) {
         AmountSpec::Shares(shares) => (shares, "shares"),
         AmountSpec::Percent(percent) => (percent, "percent"),
         AmountSpec::Zero => (Decimal::ZERO, "zero"),
-    }
-}
-
-fn unite_amount_spec(amount: Decimal, unit: &str) -> AmountSpec {
-    match unit {
-        "dollars" => AmountSpec::Dollars(amount),
-        "shares" => AmountSpec::Shares(amount),
-        "percent" => AmountSpec::Percent(amount),
-        "zero" => AmountSpec::Zero,
-        _ => unreachable!(),
     }
 }

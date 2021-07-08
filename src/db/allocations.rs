@@ -1,76 +1,27 @@
-use crate::manager::{Allocation, Owner, Position};
-use anyhow::Result;
+use crate::types::{Allocation, Owner};
+use std::convert::TryInto;
 use std::sync::Arc;
-use tokio_postgres::Client;
+use tokio_postgres::{Client, Error};
 use tracing::trace;
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
-pub(crate) async fn get_allocations(client: Arc<Client>) -> Result<Vec<Allocation>> {
+pub async fn get_allocations(client: Arc<Client>) -> Result<Vec<Allocation>, Error> {
     trace!("Getting allocations");
     client
         .query("SELECT * FROM allocations", &[])
         .await?
         .into_iter()
-        .map(|row| -> Result<Allocation> {
-            let owner = if row.try_get::<usize, &str>(0)? == "House" {
-                Owner::House
-            } else {
-                Owner::Strategy(row.try_get(0)?, row.try_get(1)?)
-            };
-            Ok(Allocation {
-                id: row.try_get(7)?,
-                owner,
-                claim_id: row.try_get(2)?,
-                lot_id: row.try_get(3)?,
-                ticker: row.try_get(4)?,
-                shares: row.try_get(5)?,
-                basis: row.try_get(6)?,
-            })
-        })
+        .map(TryInto::try_into)
         .collect()
 }
 
-#[tracing::instrument(skip(client, owner))]
-pub(crate) async fn get_positions_by_owner(
-    client: Arc<Client>,
-    owner: Owner,
-) -> Result<Vec<Position>> {
-    let (owner, sub_owner) = match owner {
-        Owner::House => ("House".to_string(), None),
-        Owner::Strategy(owner, sub_owner) => (owner, sub_owner),
-    };
-    let res = match sub_owner {
-        Some(sub_owner) => {
-            client.query("SELECT owner, sub_owner, ticker, sum(shares), sum(basis) FROM allocations WHERE owner = $1 AND sub_owner = $2 GROUP BY owner, sub_owner, ticker", &[&owner, &sub_owner]).await?
-        }
-        None => {
-            client.query("SELECT owner, null, ticker, sum(shares), sum(basis) FROM allocations WHERE owner = $1 GROUP BY owner, ticker", &[&owner]).await?
-        }
-    };
-
-    res.into_iter()
-        .map(|row| -> Result<Position> {
-            let owner = if row.try_get::<usize, &str>(0)? == "House" {
-                Owner::House
-            } else {
-                Owner::Strategy(row.try_get(0)?, row.try_get(1)?)
-            };
-            Ok(Position::new(
-                owner,
-                row.try_get(2)?,
-                row.try_get(3)?,
-                row.try_get(4)?,
-            ))
-        })
-        .collect()
-}
-
-pub(crate) async fn set_allocation_owner(
+pub async fn set_allocation_owner(
     client: Arc<Client>,
     id: Uuid,
     owner: Owner,
-) -> Result<()> {
+) -> Result<(), Error> {
+    trace!("Updating allocation owner");
     let (owner, sub_owner) = match owner {
         Owner::House => ("House".to_string(), None),
         Owner::Strategy(owner, sub_owner) => (owner, sub_owner),
@@ -96,32 +47,8 @@ pub(crate) async fn set_allocation_owner(
     Ok(())
 }
 
-#[tracing::instrument(skip(client, ticker))]
-pub(crate) async fn get_positions_by_ticker(
-    client: Arc<Client>,
-    ticker: &str,
-) -> Result<Vec<Position>> {
-    client.query("SELECT owner, sub_owner, ticker, sum(shares), sum(basis) FROM allocations WHERE ticker = $1 GROUP BY owner, sub_owner, ticker", &[&ticker])
-            .await?
-            .into_iter()
-            .map(|row| -> Result<Position> {
-                let owner = if row.try_get::<usize, &str>(0)? == "House" {
-                    Owner::House
-                } else {
-                    Owner::Strategy(row.try_get(0)?, row.try_get(1)?)
-                };
-                Ok(Position::new(
-                    owner,
-                    row.try_get(2)?,
-                    row.try_get(3)?,
-                    row.try_get(4)?,
-                ))
-            })
-            .collect()
-}
-
 #[tracing::instrument(skip(client, allocation))]
-pub(crate) async fn save_allocation(client: Arc<Client>, allocation: Allocation) -> Result<()> {
+pub async fn save_allocation(client: Arc<Client>, allocation: Allocation) -> Result<(), Error> {
     trace!("Saving allocation");
     let (owner, sub_owner) = match allocation.owner {
         Owner::House => ("House".to_string(), None),

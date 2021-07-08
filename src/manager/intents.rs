@@ -1,5 +1,6 @@
-use super::{Claim, OrderManager, Owner, PendingOrder, Position};
+use super::OrderManager;
 use crate::db;
+use crate::types::{Claim, Owner, PendingOrder, Position};
 use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -34,7 +35,7 @@ impl PositionIntentExt for PositionIntent {
 
 impl OrderManager {
     #[tracing::instrument(skip(self, intent), fields(id = %intent.id))]
-    pub(super) async fn triage_intent(&mut self, intent: PositionIntent) -> Result<()> {
+    pub async fn triage_intent(&mut self, intent: PositionIntent) -> Result<()> {
         debug!("Handling position intent");
         if intent.is_expired() {
             // Intent has already expired, so don't do anything
