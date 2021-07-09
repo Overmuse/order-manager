@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use prometheus::{CounterVec, IntCounterVec, Opts, Registry};
+use prometheus::{CounterVec, GaugeVec, IntCounterVec, Opts, Registry};
 
 lazy_static! {
     pub static ref REGISTRY: Registry = Registry::new();
@@ -11,6 +11,11 @@ lazy_static! {
         &["ticker"]
     )
     .expect("Metric can be created");
+    pub static ref NET_INVESTMENT_AMOUNT: GaugeVec = GaugeVec::new(
+        Opts::new("net_investment_amount", "Net dollar amount allocated"),
+        &["strategy", "ticker"]
+    )
+    .expect("Metric can be created");
 }
 
 pub fn register_custom_metrics() {
@@ -19,5 +24,8 @@ pub fn register_custom_metrics() {
         .expect("collector can be registered");
     REGISTRY
         .register(Box::new(GROSS_TRADE_AMOUNT.clone()))
+        .expect("collector can be registered");
+    REGISTRY
+        .register(Box::new(NET_INVESTMENT_AMOUNT.clone()))
         .expect("collector can be registered");
 }

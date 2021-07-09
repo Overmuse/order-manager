@@ -1,7 +1,7 @@
 use super::OrderManager;
 use crate::db;
-use crate::metrics::{GROSS_TRADE_AMOUNT, NUM_TRADES};
-use crate::types::{split_lot, Allocation, Lot};
+use crate::metrics::{GROSS_TRADE_AMOUNT, NET_INVESTMENT_AMOUNT, NUM_TRADES};
+use crate::types::{split_lot, Allocation, Lot, Owner};
 use alpaca::{Event, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -141,6 +141,13 @@ impl OrderManager {
             .context("Failed to get claim")?;
         let allocations = split_lot(&claims, &lot);
         for allocation in allocations {
+            let owner = match allocation.owner {
+                Owner::House => "house",
+                Owner::Strategy(ref strat, _) => &strat,
+            };
+            NET_INVESTMENT_AMOUNT
+                .with_label_values(&[owner, &allocation.ticker])
+                .add(allocation.basis.to_f64().unwrap_or(0.0));
             self.adjust_claim(&allocation)
                 .await
                 .context("Failed to adjust claim")?;
