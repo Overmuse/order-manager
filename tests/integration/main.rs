@@ -3,12 +3,12 @@ use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
 use futures::FutureExt;
 use order_manager::{run, Settings};
-use position_intents::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
 use rust_decimal::Decimal;
 use tracing::{debug, info};
+use trading_base::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use uuid::Uuid;
 
 use order_events::send_order_event;

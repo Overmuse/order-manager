@@ -1,10 +1,11 @@
 use crate::types::Claim;
-use position_intents::AmountSpec;
+use anyhow::Result;
 use rust_decimal::prelude::*;
 use std::convert::TryInto;
 use std::sync::Arc;
 use tokio_postgres::{Client, Error};
 use tracing::trace;
+use trading_base::AmountSpec;
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
