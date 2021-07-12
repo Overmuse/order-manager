@@ -1,5 +1,4 @@
 use crate::types::Claim;
-use anyhow::Result;
 use rust_decimal::prelude::*;
 use std::convert::TryInto;
 use std::sync::Arc;
