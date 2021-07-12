@@ -5,9 +5,9 @@ use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
-use position_intents::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use rust_decimal::prelude::*;
 use tracing::{debug, trace};
+use trading_base::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use uuid::Uuid;
 
 pub(crate) trait PositionIntentExt {
