@@ -1,9 +1,9 @@
 use super::utils::{split_amount_spec, unite_amount_spec};
 use anyhow::Result;
-use position_intents::{PositionIntent, TickerSpec};
 use std::sync::Arc;
 use tokio_postgres::Client;
 use tracing::trace;
+use trading_base::{PositionIntent, TickerSpec};
 use uuid::Uuid;
 
 pub async fn get_scheduled_indents(client: Arc<Client>) -> Result<Vec<PositionIntent>> {

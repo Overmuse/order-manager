@@ -1,5 +1,5 @@
-use position_intents::AmountSpec;
 use rust_decimal::Decimal;
+use trading_base::AmountSpec;
 
 pub fn split_amount_spec(amount_spec: AmountSpec) -> (Decimal, &'static str) {
     match amount_spec {

@@ -1,6 +1,5 @@
 use super::utils::split_amount_spec;
 use crate::types::Claim;
-use rust_decimal::prelude::*;
 use std::convert::TryInto;
 use std::sync::Arc;
 use tokio_postgres::{Client, Error};
