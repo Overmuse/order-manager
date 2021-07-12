@@ -1,5 +1,5 @@
+use super::utils::split_amount_spec;
 use crate::types::Claim;
-use rust_decimal::prelude::*;
 use std::convert::TryInto;
 use std::sync::Arc;
 use tokio_postgres::{Client, Error};
@@ -77,13 +77,4 @@ pub async fn save_claim(client: Arc<Client>, claim: Claim) -> Result<(), Error> 
             &unit])
             .await?;
     Ok(())
-}
-
-fn split_amount_spec(amount_spec: AmountSpec) -> (Decimal, &'static str) {
-    match amount_spec {
-        AmountSpec::Dollars(dollars) => (dollars, "dollars"),
-        AmountSpec::Shares(shares) => (shares, "shares"),
-        AmountSpec::Percent(percent) => (percent, "percent"),
-        AmountSpec::Zero => (Decimal::ZERO, "zero"),
-    }
 }

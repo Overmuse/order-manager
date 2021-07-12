@@ -10,7 +10,7 @@ use tracing::{debug, trace};
 use trading_base::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use uuid::Uuid;
 
-trait PositionIntentExt {
+pub(crate) trait PositionIntentExt {
     fn is_expired(&self) -> bool;
     fn is_active(&self) -> bool;
 }
@@ -44,7 +44,7 @@ impl OrderManager {
         } else if !intent.is_active() {
             // Not ready to transmit intent yet
             debug!("Sending intent to scheduler");
-            self.schedule_position_intent(intent)
+            self.schedule_position_intent(intent).await
         } else {
             debug!("Evaluating intent");
             self.evaluate_intent(intent).await
@@ -52,7 +52,10 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent))]
-    fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
+    pub async fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
+        db::save_scheduled_intent(self.db_client.clone(), intent.clone())
+            .await
+            .context("Failed to save scheduled intent")?;
         self.scheduler_sender
             .send(intent)
             .context("Failed to send intent to scheduler")

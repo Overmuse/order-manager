@@ -1,4 +1,5 @@
 use super::OrderManager;
+use crate::db;
 use alpaca::AlpacaMessage;
 use anyhow::{anyhow, Result};
 use rdkafka::Message;
@@ -27,6 +28,7 @@ impl OrderManager {
             scheduled_intent = self.scheduler_receiver.recv() => {
                 debug!("Message received from scheduler");
                 let intent = scheduled_intent.ok_or_else(|| anyhow!("Channel closed"))?;
+                db::delete_scheduled_intent(self.db_client.clone(), &intent.id).await?;
                 Ok(Input::PositionIntent(intent))
             }
         }
