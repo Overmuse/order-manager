@@ -1,9 +1,9 @@
-use position_intents::AmountSpec;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use tokio_postgres::Row;
 use tracing::trace;
+use trading_base::AmountSpec;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

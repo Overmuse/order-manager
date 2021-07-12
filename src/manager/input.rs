@@ -1,10 +1,10 @@
 use super::OrderManager;
 use alpaca::AlpacaMessage;
 use anyhow::{anyhow, Result};
-use position_intents::PositionIntent;
 use rdkafka::Message;
 use serde::Deserialize;
 use tracing::debug;
+use trading_base::PositionIntent;
 
 #[derive(Deserialize)]
 #[serde(untagged)]

@@ -1,9 +1,9 @@
 use chrono::Utc;
 use futures::stream::StreamExt;
-use position_intents::PositionIntent;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::time::delay_queue::DelayQueue;
 use tracing::{debug, info};
+use trading_base::PositionIntent;
 
 pub struct IntentScheduler {
     scheduled_intents: DelayQueue<PositionIntent>,
