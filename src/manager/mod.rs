@@ -1,12 +1,12 @@
 use alpaca::orders::OrderIntent;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
-use position_intents::PositionIntent;
 use rdkafka::consumer::StreamConsumer;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{error, info};
+use trading_base::PositionIntent;
 
 mod dependent_orders;
 mod input;

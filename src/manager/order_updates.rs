@@ -5,9 +5,9 @@ use crate::types::{split_lot, Allocation, Lot, Owner};
 use alpaca::{Event, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
-use position_intents::AmountSpec;
 use rust_decimal::prelude::*;
 use tracing::debug;
+use trading_base::AmountSpec;
 
 impl OrderManager {
     #[tracing::instrument(skip(self, event), fields(id = %event.order.client_order_id))]
