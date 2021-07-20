@@ -38,3 +38,14 @@ pub async fn get_positions_by_ticker(
             .map(TryInto::try_into)
             .collect()
 }
+
+#[tracing::instrument(skip(client))]
+pub async fn get_positions(client: Arc<Client>) -> Result<Vec<Position>, Error> {
+    trace!("Getting positions");
+    client
+        .query("SELECT * FROM allocations", &[])
+        .await?
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect()
+}

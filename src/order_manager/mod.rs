@@ -1,5 +1,5 @@
 use crate::db;
-use alpaca::orders::OrderIntent;
+use crate::OrderSenderHandle;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
 use rdkafka::consumer::StreamConsumer;
@@ -20,7 +20,7 @@ pub struct OrderManager {
     kafka_consumer: StreamConsumer,
     scheduler_sender: UnboundedSender<PositionIntent>,
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
-    order_sender: UnboundedSender<OrderIntent>,
+    order_sender: OrderSenderHandle,
     db_client: Arc<Client>,
 }
 
@@ -29,7 +29,7 @@ impl OrderManager {
         kafka_consumer: StreamConsumer,
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
-        order_sender: UnboundedSender<OrderIntent>,
+        order_sender: OrderSenderHandle,
         db_client: Arc<Client>,
     ) -> Self {
         Self {

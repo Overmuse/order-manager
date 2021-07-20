@@ -14,6 +14,7 @@ impl OrderManager {
             for order in orders {
                 self.order_sender
                     .send(order)
+                    .await
                     .context("Failed to send dependent-order to OrderSender")?
             }
         }

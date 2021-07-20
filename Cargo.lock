@@ -13,8 +13,8 @@ dependencies = [
 
 [[package]]
 name = "alpaca"
-version = "0.7.0"
-source = "git+ssh://git@github.com/Overmuse/alpaca.git?tag=v0.7.0#1dd0bfd3faf13f1c402565ccf8c5602176997d7d"
+version = "0.7.1"
+source = "git+ssh://git@github.com/Overmuse/alpaca.git?tag=v0.7.1#4f6c0e849416504f1a24795e206835a9a598bceb"
 dependencies = [
  "chrono",
  "futures",
@@ -914,7 +914,7 @@ dependencies = [
 
 [[package]]
 name = "order-manager"
-version = "7.0.0"
+version = "7.0.1"
 dependencies = [
  "alpaca",
  "anyhow",

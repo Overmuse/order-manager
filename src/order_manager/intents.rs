@@ -128,6 +128,7 @@ impl OrderManager {
                 Ok(self
                     .order_sender
                     .send(sent)
+                    .await
                     .context("Failed to send order")?)
             }
             (Some(claim), Some(sent), Some(saved)) => {
@@ -159,6 +160,7 @@ impl OrderManager {
                 Ok(self
                     .order_sender
                     .send(sent)
+                    .await
                     .context("Failed to send order")?)
             }
             _ => unreachable!(),
@@ -234,6 +236,7 @@ impl OrderManager {
             Ok(self
                 .order_sender
                 .send(order_intent)
+                .await
                 .context("Failed to send order")?)
         } else {
             Err(anyhow!("Can't close position of house account"))
