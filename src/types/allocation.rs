@@ -1,4 +1,5 @@
 use super::{Claim, Lot, Owner};
+use num_traits::Signed;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -72,6 +73,10 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 if dollars.is_zero() {
                     continue;
                 }
+                if dollars.signum() != remaining_basis.signum() {
+                    // Only allocate buys to buys and sells to sells
+                    continue;
+                }
                 let mut allocated_dollars = dollars.abs().min(remaining_basis.abs());
                 if dollars.is_sign_negative() {
                     allocated_dollars.set_sign_negative(true)
@@ -135,10 +140,16 @@ mod test {
                 "A".into(),
                 None,
                 "AAPL".into(),
-                AmountSpec::Dollars(Decimal::new(400, 0)),
+                AmountSpec::Dollars(Decimal::new(-400, 0)),
             ),
             Claim::new(
                 "B".into(),
+                None,
+                "AAPL".into(),
+                AmountSpec::Dollars(Decimal::new(400, 0)),
+            ),
+            Claim::new(
+                "C".into(),
                 Some("B2".into()),
                 "AAPL".into(),
                 AmountSpec::Shares(Decimal::new(25, 1)),
@@ -150,8 +161,8 @@ mod test {
             allocations[0],
             Allocation {
                 id: allocations[0].id,
-                owner: Owner::Strategy("A".into(), None),
-                claim_id: Some(claims[0].id),
+                owner: Owner::Strategy("B".into(), None),
+                claim_id: Some(claims[1].id),
                 lot_id: lot.id,
                 ticker: "AAPL".into(),
                 shares: Decimal::new(4, 0),
@@ -162,8 +173,8 @@ mod test {
             allocations[1],
             Allocation {
                 id: allocations[1].id,
-                owner: Owner::Strategy("B".into(), Some("B2".into())),
-                claim_id: Some(claims[1].id),
+                owner: Owner::Strategy("C".into(), Some("B2".into())),
+                claim_id: Some(claims[2].id),
                 lot_id: lot.id,
                 ticker: "AAPL".into(),
                 shares: Decimal::new(25, 1),
