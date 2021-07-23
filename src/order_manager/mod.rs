@@ -61,7 +61,7 @@ impl OrderManager {
 
     async fn initalize(&mut self) -> Result<()> {
         debug!("Populating scheduled intents");
-        let scheduled_intents = db::get_scheduled_indents(self.db_client.clone())
+        let scheduled_intents = db::get_scheduled_indents(self.db_client.as_ref())
             .await
             .context("Failed to get scheduled intents")?;
         for intent in scheduled_intents {

@@ -1,13 +1,12 @@
 use alpaca::orders::OrderIntent;
 use alpaca::OrderType;
 use anyhow::{anyhow, Result};
-use std::sync::Arc;
-use tokio_postgres::Client;
+use tokio_postgres::GenericClient;
 use tracing::trace;
 
 #[tracing::instrument(skip(client, id, dependent_order))]
-pub async fn save_dependent_order(
-    client: Arc<Client>,
+pub async fn save_dependent_order<T: GenericClient>(
+    client: &T,
     id: &str,
     dependent_order: OrderIntent,
 ) -> Result<()> {
@@ -43,7 +42,10 @@ pub async fn save_dependent_order(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn take_dependent_orders(client: Arc<Client>, id: &str) -> Result<Vec<OrderIntent>> {
+pub async fn take_dependent_orders<T: GenericClient>(
+    client: &T,
+    id: &str,
+) -> Result<Vec<OrderIntent>> {
     trace!(id, "Saving dependent order");
     client
         .query(

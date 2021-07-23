@@ -6,7 +6,7 @@ use tracing::debug;
 impl OrderManager {
     #[tracing::instrument(skip(self, id))]
     pub async fn trigger_dependent_orders(&mut self, id: &str) -> Result<()> {
-        let orders = db::take_dependent_orders(self.db_client.clone(), id)
+        let orders = db::take_dependent_orders(self.db_client.as_ref(), id)
             .await
             .context("Failed to take and delete dependent order")?;
         if !orders.is_empty() {

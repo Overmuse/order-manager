@@ -1,12 +1,11 @@
 use crate::types::PendingOrder;
 use std::convert::TryInto;
-use std::sync::Arc;
-use tokio_postgres::{Client, Error};
+use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
 
 #[tracing::instrument(skip(client, ticker))]
-pub async fn get_pending_order_amount_by_ticker(
-    client: Arc<Client>,
+pub async fn get_pending_order_amount_by_ticker<T: GenericClient>(
+    client: &T,
     ticker: &str,
 ) -> Result<Option<i32>, Error> {
     trace!(ticker, "Getting pending order amount");
@@ -21,7 +20,7 @@ pub async fn get_pending_order_amount_by_ticker(
 }
 
 #[tracing::instrument(skip(client))]
-pub async fn get_pending_orders(client: Arc<Client>) -> Result<Vec<PendingOrder>, Error> {
+pub async fn get_pending_orders<T: GenericClient>(client: &T) -> Result<Vec<PendingOrder>, Error> {
     trace!("Getting pending orders");
     client
         .query("SELECT * FROM pending_orders", &[])
@@ -32,8 +31,8 @@ pub async fn get_pending_orders(client: Arc<Client>) -> Result<Vec<PendingOrder>
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn get_pending_order_by_id(
-    client: Arc<Client>,
+pub async fn get_pending_order_by_id<T: GenericClient>(
+    client: &T,
     id: &str,
 ) -> Result<Option<PendingOrder>, Error> {
     trace!(id, "Getting pending order");
@@ -45,8 +44,8 @@ pub async fn get_pending_order_by_id(
 }
 
 #[tracing::instrument(skip(client, id, qty))]
-pub async fn update_pending_order_qty(
-    client: Arc<Client>,
+pub async fn update_pending_order_qty<T: GenericClient>(
+    client: &T,
     id: &str,
     qty: i32,
 ) -> Result<(), Error> {
@@ -61,8 +60,8 @@ pub async fn update_pending_order_qty(
 }
 
 #[tracing::instrument(skip(client, pending_order))]
-pub async fn save_pending_order(
-    client: Arc<Client>,
+pub async fn save_pending_order<T: GenericClient>(
+    client: &T,
     pending_order: PendingOrder,
 ) -> Result<(), Error> {
     trace!(id = %pending_order.id, "Saving pending order");
@@ -71,7 +70,10 @@ pub async fn save_pending_order(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn delete_pending_order_by_id(client: Arc<Client>, id: &str) -> Result<(), Error> {
+pub async fn delete_pending_order_by_id<T: GenericClient>(
+    client: &T,
+    id: &str,
+) -> Result<(), Error> {
     trace!(id, "Deleting pending order");
     client
         .execute("DELETE FROM pending_orders WHERE id = $1", &[&id])
