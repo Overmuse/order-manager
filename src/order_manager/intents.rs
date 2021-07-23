@@ -322,9 +322,7 @@ impl OrderManager {
         }
     }
 
-    fn net_claim(&self, _claim: &mut Claim) {
-        ()
-    }
+    fn net_claim(&self, _claim: &mut Claim) {}
 }
 
 #[tracing::instrument(skip(prefix, ticker, qty, limit_price, stop_price))]
