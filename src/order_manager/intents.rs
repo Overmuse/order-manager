@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
 use rust_decimal::prelude::*;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 use trading_base::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
 use uuid::Uuid;
 
@@ -53,7 +53,7 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self, intent))]
     pub async fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
-        db::save_scheduled_intent(self.db_client.clone(), intent.clone())
+        db::save_scheduled_intent(self.db_client.as_ref(), intent.clone())
             .await
             .context("Failed to save scheduled intent")?;
         self.scheduler_sender
@@ -76,12 +76,13 @@ impl OrderManager {
         intent: PositionIntent,
         ticker: &str,
     ) -> Result<()> {
-        let pending_shares = db::get_pending_order_amount_by_ticker(self.db_client.clone(), ticker)
-            .await
-            .context("Failed to get pending order amount")?
-            .unwrap_or(0)
-            .into();
-        let positions = db::get_positions_by_ticker(self.db_client.clone(), &ticker)
+        let pending_shares =
+            db::get_pending_order_amount_by_ticker(self.db_client.as_ref(), ticker)
+                .await
+                .context("Failed to get pending order amount")?
+                .unwrap_or(0)
+                .into();
+        let positions = db::get_positions_by_ticker(self.db_client.as_ref(), &ticker)
             .await
             .context("Failed to get positions")?;
         let strategy_shares = positions
@@ -96,75 +97,51 @@ impl OrderManager {
             })
             .sum();
         let total_shares = positions.iter().map(|pos| pos.shares).sum();
-        match self.make_orders(
-            &intent,
-            &ticker,
-            strategy_shares,
-            total_shares,
-            pending_shares,
-        )? {
-            (None, None, None) => {
-                debug!("No trades generated");
-                Ok(())
-            }
-            (Some(claim), Some(sent), None) => {
-                db::save_claim(self.db_client.clone(), claim)
-                    .await
-                    .context("Failed to save claim")?;
-                let qty = match sent.side {
-                    Side::Buy => sent.qty.to_isize().unwrap(),
-                    Side::Sell => -(sent.qty.to_isize().unwrap()),
-                };
-                db::save_pending_order(
-                    self.db_client.clone(),
-                    PendingOrder::new(
-                        sent.client_order_id.clone().unwrap(),
-                        ticker.to_string(),
-                        qty as i32,
-                    ),
-                )
+        let maybe_claim = self.make_claim(&intent, &ticker, strategy_shares);
+        if let Some(mut claim) = maybe_claim {
+            self.net_claim(&mut claim);
+            let diff_shares = match claim.amount {
+                AmountSpec::Shares(shares) => shares,
+                _ => unreachable!(),
+            };
+            db::save_claim(self.db_client.as_ref(), claim)
                 .await
-                .context("Failed to save pending order")?;
-                Ok(self
-                    .order_sender
-                    .send(sent)
-                    .await
-                    .context("Failed to send order")?)
-            }
-            (Some(claim), Some(sent), Some(saved)) => {
+                .context("Failed to save claim")?;
+
+            let (sent, maybe_saved) =
+                self.make_orders(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
+            if let Some(saved) = maybe_saved {
                 debug!("Saving dependent order");
                 db::save_dependent_order(
-                    self.db_client.clone(),
+                    self.db_client.as_ref(),
                     &sent.client_order_id.clone().unwrap(),
                     saved,
                 )
                 .await
                 .context("Failed to save dependent order")?;
-                db::save_claim(self.db_client.clone(), claim)
-                    .await
-                    .context("Failed to save claim")?;
-                let qty = match sent.side {
-                    Side::Buy => sent.qty.to_isize().unwrap(),
-                    Side::Sell => -(sent.qty.to_isize().unwrap()),
-                };
-                db::save_pending_order(
-                    self.db_client.clone(),
-                    PendingOrder::new(
-                        sent.client_order_id.clone().unwrap(),
-                        ticker.to_string(),
-                        qty as i32,
-                    ),
-                )
-                .await
-                .context("Failed to save pending order")?;
-                Ok(self
-                    .order_sender
-                    .send(sent)
-                    .await
-                    .context("Failed to send order")?)
             }
-            _ => unreachable!(),
+
+            let qty = match sent.side {
+                Side::Buy => sent.qty.to_isize().unwrap(),
+                Side::Sell => -(sent.qty.to_isize().unwrap()),
+            };
+            db::save_pending_order(
+                self.db_client.as_ref(),
+                PendingOrder::new(
+                    sent.client_order_id.clone().unwrap(),
+                    ticker.to_string(),
+                    qty as i32,
+                ),
+            )
+            .await
+            .context("Failed to save pending order")?;
+
+            self.order_sender
+                .send(sent)
+                .await
+                .context("Failed to send order")?;
         }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, intent))]
@@ -178,7 +155,7 @@ impl OrderManager {
                     return Ok(());
                 }
                 UpdatePolicy::RetainLong => {
-                    db::get_positions_by_owner(self.db_client.clone(), owner)
+                    db::get_positions_by_owner(self.db_client.as_ref(), owner)
                         .await
                         .context("Failed to get positions")?
                         .into_iter()
@@ -186,14 +163,14 @@ impl OrderManager {
                         .collect()
                 }
                 UpdatePolicy::RetainShort => {
-                    db::get_positions_by_owner(self.db_client.clone(), owner)
+                    db::get_positions_by_owner(self.db_client.as_ref(), owner)
                         .await
                         .context("Failed to get position")?
                         .into_iter()
                         .filter(|pos| pos.is_long())
                         .collect()
                 }
-                UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.clone(), owner)
+                UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.as_ref(), owner)
                     .await
                     .context("Failed to get positions")?,
             };
@@ -220,11 +197,11 @@ impl OrderManager {
                 position.ticker.clone(),
                 AmountSpec::Shares(-position.shares),
             );
-            db::save_claim(self.db_client.clone(), claim)
+            db::save_claim(self.db_client.as_ref(), claim)
                 .await
                 .context("Failed to save claim")?;
             db::save_pending_order(
-                self.db_client.clone(),
+                self.db_client.as_ref(),
                 PendingOrder::new(
                     order_intent.client_order_id.clone().unwrap(),
                     position.ticker.to_string(),
@@ -243,26 +220,17 @@ impl OrderManager {
         }
     }
 
-    #[tracing::instrument(skip(
-        self,
-        intent,
-        ticker,
-        strategy_shares,
-        total_shares,
-        pending_shares
-    ))]
-    fn make_orders(
+    #[tracing::instrument(skip(self, intent, ticker, strategy_shares,))]
+    fn make_claim(
         &self,
         intent: &PositionIntent,
         ticker: &str,
         strategy_shares: Decimal,
-        total_shares: Decimal,
-        pending_shares: Decimal,
-    ) -> Result<(Option<Claim>, Option<OrderIntent>, Option<OrderIntent>)> {
+    ) -> Option<Claim> {
         match intent.update_policy {
             UpdatePolicy::Retain => {
                 debug!("UpdatePolicy::Retain: No trading needed");
-                return Ok((None, None, None));
+                return None;
             }
             UpdatePolicy::RetainLong => {
                 if strategy_shares > Decimal::ZERO {
@@ -270,7 +238,7 @@ impl OrderManager {
                         "UpdatePolicy::RetainLong and position {}: No trading needed",
                         strategy_shares
                     );
-                    return Ok((None, None, None));
+                    return None;
                 }
             }
             UpdatePolicy::RetainShort => {
@@ -279,12 +247,11 @@ impl OrderManager {
                         "UpdatePolicy::RetainShort and position {}: No trading needed",
                         strategy_shares
                     );
-                    return Ok((None, None, None));
+                    return None;
                 }
             }
             _ => (),
         };
-
         let diff_shares = match intent.amount {
             AmountSpec::Dollars(dollars) => {
                 // TODO: fix the below so we can always have a price
@@ -294,7 +261,8 @@ impl OrderManager {
                     .or(intent.stop_price)
                     .expect("Need either limit price, stop price or decision price");
                 if price.is_zero() {
-                    return Err(anyhow!("Price of intent cannot be zero"));
+                    warn!("Price of intent cannot be zero");
+                    return None;
                 }
                 dollars / price - strategy_shares
             }
@@ -304,7 +272,7 @@ impl OrderManager {
         };
         if diff_shares.is_zero() {
             debug!("No change in shares: No trading needed");
-            return Ok((None, None, None));
+            return None;
         }
         let claim = Claim::new(
             intent.strategy.clone(),
@@ -312,17 +280,29 @@ impl OrderManager {
             ticker.to_string(),
             AmountSpec::Shares(diff_shares),
         );
+        Some(claim)
+    }
+
+    #[tracing::instrument(skip(self, intent, ticker, diff_shares, total_shares, pending_shares))]
+    fn make_orders(
+        &self,
+        intent: &PositionIntent,
+        ticker: &str,
+        diff_shares: Decimal,
+        total_shares: Decimal,
+        pending_shares: Decimal,
+    ) -> Result<(OrderIntent, Option<OrderIntent>)> {
         let signum_product = (total_shares + pending_shares).signum()
             * (diff_shares + total_shares + pending_shares).signum();
         if !signum_product.is_sign_negative() {
-            let trade = make_order_intent(
+            let sent = make_order_intent(
                 &intent.id.to_string(),
                 ticker,
                 diff_shares,
                 intent.limit_price,
                 intent.stop_price,
             );
-            Ok((Some(claim), Some(trade), None))
+            Ok((sent, None))
         } else {
             let sent = make_order_intent(
                 &intent.id.to_string(),
@@ -338,9 +318,11 @@ impl OrderManager {
                 intent.limit_price,
                 intent.stop_price,
             );
-            Ok((Some(claim), Some(sent), Some(saved)))
+            Ok((sent, Some(saved)))
         }
     }
+
+    fn net_claim(&self, _claim: &mut Claim) {}
 }
 
 #[tracing::instrument(skip(prefix, ticker, qty, limit_price, stop_price))]
@@ -356,6 +338,7 @@ fn make_order_intent(
     } else {
         Side::Sell
     };
+
     let order_type = match (limit_price, stop_price) {
         (Some(limit_price), Some(stop_price)) => OrderType::StopLimit {
             limit_price,
@@ -365,6 +348,7 @@ fn make_order_intent(
         (None, Some(stop_price)) => OrderType::Stop { stop_price },
         (None, None) => OrderType::Market,
     };
+
     OrderIntent::new(ticker)
         .client_order_id(format!("{}_{}", prefix, Uuid::new_v4().to_string()))
         .qty(qty.abs().ceil().to_usize().unwrap())

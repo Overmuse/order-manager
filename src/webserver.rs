@@ -16,13 +16,15 @@ fn with_db(db: Db) -> impl Filter<Extract = (Db,), Error = Infallible> + Clone {
 
 #[tracing::instrument(skip(db))]
 async fn get_allocations(db: Db) -> Result<impl Reply, Rejection> {
-    let allocations = db::get_allocations(db).await.map_err(|_| reject())?;
+    let allocations = db::get_allocations(db.as_ref())
+        .await
+        .map_err(|_| reject())?;
     Ok(json(&allocations))
 }
 
 #[tracing::instrument(skip(db))]
 async fn set_allocation_owner(id: Uuid, owner: Owner, db: Db) -> Result<impl Reply, Rejection> {
-    let allocations = db::set_allocation_owner(db, id, owner)
+    let allocations = db::set_allocation_owner(db.as_ref(), id, owner)
         .await
         .map_err(|_| reject())?;
     Ok(json(&allocations))
@@ -30,19 +32,21 @@ async fn set_allocation_owner(id: Uuid, owner: Owner, db: Db) -> Result<impl Rep
 
 #[tracing::instrument(skip(db))]
 async fn get_lots(db: Db) -> Result<impl Reply, Rejection> {
-    let lots = db::get_lots(db).await.map_err(|_| reject())?;
+    let lots = db::get_lots(db.as_ref()).await.map_err(|_| reject())?;
     Ok(json(&lots))
 }
 
 #[tracing::instrument(skip(db))]
 async fn get_claims(db: Db) -> Result<impl Reply, Rejection> {
-    let claims = db::get_claims(db).await.map_err(|_| reject())?;
+    let claims = db::get_claims(db.as_ref()).await.map_err(|_| reject())?;
     Ok(json(&claims))
 }
 
 #[tracing::instrument(skip(db))]
 async fn get_pending_orders(db: Db) -> Result<impl Reply, Rejection> {
-    let pending_orders = db::get_pending_orders(db).await.map_err(|_| reject())?;
+    let pending_orders = db::get_pending_orders(db.as_ref())
+        .await
+        .map_err(|_| reject())?;
     Ok(json(&pending_orders))
 }
 

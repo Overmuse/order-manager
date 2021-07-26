@@ -1,14 +1,12 @@
 use super::utils::split_amount_spec;
 use crate::types::Claim;
 use std::convert::TryInto;
-use std::sync::Arc;
-use tokio_postgres::{Client, Error};
+use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
 use trading_base::AmountSpec;
 use uuid::Uuid;
 
-#[tracing::instrument(skip(client))]
-pub async fn get_claims(client: Arc<Client>) -> Result<Vec<Claim>, Error> {
+pub async fn get_claims<T: GenericClient>(client: &T) -> Result<Vec<Claim>, Error> {
     trace!("Getting claims");
     client
         .query("SELECT * FROM claims", &[])
@@ -19,7 +17,10 @@ pub async fn get_claims(client: Arc<Client>) -> Result<Vec<Claim>, Error> {
 }
 
 #[tracing::instrument(skip(client, ticker))]
-pub async fn get_claims_by_ticker(client: Arc<Client>, ticker: &str) -> Result<Vec<Claim>, Error> {
+pub async fn get_claims_by_ticker<T: GenericClient>(
+    client: &T,
+    ticker: &str,
+) -> Result<Vec<Claim>, Error> {
     trace!(ticker, "Getting claims");
     client
         .query("SELECT * FROM claims WHERE ticker = $1", &[&ticker])
@@ -30,7 +31,7 @@ pub async fn get_claims_by_ticker(client: Arc<Client>, ticker: &str) -> Result<V
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn get_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<Claim, Error> {
+pub async fn get_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<Claim, Error> {
     trace!(%id, "Getting claim");
     client
         .query_one("SELECT * FROM claims WHERE id = $1", &[&id])
@@ -39,8 +40,8 @@ pub async fn get_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<Claim, Err
 }
 
 #[tracing::instrument(skip(client, id, amount))]
-pub async fn update_claim_amount(
-    client: Arc<Client>,
+pub async fn update_claim_amount<T: GenericClient>(
+    client: &T,
     id: Uuid,
     amount: AmountSpec,
 ) -> Result<(), Error> {
@@ -56,7 +57,7 @@ pub async fn update_claim_amount(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn delete_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<(), Error> {
+pub async fn delete_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<(), Error> {
     trace!(%id, "Deleting claim");
     client
         .execute("DELETE FROM claims WHERE id = $1;", &[&id])
@@ -65,7 +66,7 @@ pub async fn delete_claim_by_id(client: Arc<Client>, id: Uuid) -> Result<(), Err
 }
 
 #[tracing::instrument(skip(client, claim))]
-pub async fn save_claim(client: Arc<Client>, claim: Claim) -> Result<(), Error> {
+pub async fn save_claim<T: GenericClient>(client: &T, claim: Claim) -> Result<(), Error> {
     trace!(id = %claim.id, "Saving claim");
     let (amount, unit) = split_amount_spec(claim.amount);
     client.execute("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);", &[

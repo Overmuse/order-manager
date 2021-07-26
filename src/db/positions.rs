@@ -1,12 +1,11 @@
 use crate::types::{Owner, Position};
 use std::convert::TryInto;
-use std::sync::Arc;
-use tokio_postgres::{Client, Error};
+use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
 
 #[tracing::instrument(skip(client, owner))]
-pub async fn get_positions_by_owner(
-    client: Arc<Client>,
+pub async fn get_positions_by_owner<T: GenericClient>(
+    client: &T,
     owner: Owner,
 ) -> Result<Vec<Position>, Error> {
     trace!("Getting positions");
@@ -27,8 +26,8 @@ pub async fn get_positions_by_owner(
 }
 
 #[tracing::instrument(skip(client, ticker))]
-pub async fn get_positions_by_ticker(
-    client: Arc<Client>,
+pub async fn get_positions_by_ticker<T: GenericClient>(
+    client: &T,
     ticker: &str,
 ) -> Result<Vec<Position>, Error> {
     trace!("Getting positions");
@@ -40,7 +39,7 @@ pub async fn get_positions_by_ticker(
 }
 
 #[tracing::instrument(skip(client))]
-pub async fn get_positions(client: Arc<Client>) -> Result<Vec<Position>, Error> {
+pub async fn get_positions<T: GenericClient>(client: &T) -> Result<Vec<Position>, Error> {
     trace!("Getting positions");
     client
         .query("SELECT * FROM allocations", &[])

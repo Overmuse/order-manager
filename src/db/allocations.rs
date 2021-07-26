@@ -1,12 +1,11 @@
 use crate::types::{Allocation, Owner};
 use std::convert::TryInto;
-use std::sync::Arc;
-use tokio_postgres::{Client, Error};
+use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
-pub async fn get_allocations(client: Arc<Client>) -> Result<Vec<Allocation>, Error> {
+pub async fn get_allocations<T: GenericClient>(client: &T) -> Result<Vec<Allocation>, Error> {
     trace!("Getting allocations");
     client
         .query("SELECT * FROM allocations", &[])
@@ -16,8 +15,8 @@ pub async fn get_allocations(client: Arc<Client>) -> Result<Vec<Allocation>, Err
         .collect()
 }
 
-pub async fn set_allocation_owner(
-    client: Arc<Client>,
+pub async fn set_allocation_owner<T: GenericClient>(
+    client: &T,
     id: Uuid,
     owner: Owner,
 ) -> Result<(), Error> {
@@ -48,7 +47,10 @@ pub async fn set_allocation_owner(
 }
 
 #[tracing::instrument(skip(client, allocation))]
-pub async fn save_allocation(client: Arc<Client>, allocation: Allocation) -> Result<(), Error> {
+pub async fn save_allocation<T: GenericClient>(
+    client: &T,
+    allocation: Allocation,
+) -> Result<(), Error> {
     trace!("Saving allocation");
     let (owner, sub_owner) = match allocation.owner {
         Owner::House => ("House".to_string(), None),

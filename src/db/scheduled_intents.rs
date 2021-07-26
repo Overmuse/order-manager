@@ -1,12 +1,12 @@
 use super::utils::{split_amount_spec, unite_amount_spec};
 use anyhow::Result;
-use std::sync::Arc;
-use tokio_postgres::Client;
+use tokio_postgres::GenericClient;
 use tracing::trace;
 use trading_base::{PositionIntent, TickerSpec};
 use uuid::Uuid;
 
-pub async fn get_scheduled_indents(client: Arc<Client>) -> Result<Vec<PositionIntent>> {
+#[tracing::instrument(skip(client))]
+pub async fn get_scheduled_indents<T: GenericClient>(client: &T) -> Result<Vec<PositionIntent>> {
     trace!("Getting scheduled intents");
     client
         .query("SELECT * FROM scheduled_intents", &[])
@@ -36,8 +36,8 @@ pub async fn get_scheduled_indents(client: Arc<Client>) -> Result<Vec<PositionIn
 }
 
 #[tracing::instrument(skip(client, scheduled_intent))]
-pub async fn save_scheduled_intent(
-    client: Arc<Client>,
+pub async fn save_scheduled_intent<T: GenericClient>(
+    client: &T,
     scheduled_intent: PositionIntent,
 ) -> Result<()> {
     trace!("Saving scheduled intent");
@@ -84,7 +84,7 @@ pub async fn save_scheduled_intent(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn delete_scheduled_intent(client: Arc<Client>, id: &Uuid) -> Result<()> {
+pub async fn delete_scheduled_intent<T: GenericClient>(client: &T, id: &Uuid) -> Result<()> {
     trace!(%id, "Deleting scheduled intent");
     client
         .execute("DELETE FROM scheduled_intents WHERE id = $1", &[&id])
