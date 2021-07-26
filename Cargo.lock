@@ -1865,8 +1865,8 @@ dependencies = [
 
 [[package]]
 name = "trading-base"
-version = "0.2.0"
-source = "git+ssh://git@github.com/Overmuse/trading-base.git?tag=v0.2.0#c5dcb43cbc7568dcf380f1cb0451e662cd96f32a"
+version = "0.3.0"
+source = "git+ssh://git@github.com/Overmuse/trading-base.git?tag=v0.3.0#43b0471a3053446d743d8d418b8e707ad43b45f2"
 dependencies = [
  "chrono",
  "rust_decimal",
