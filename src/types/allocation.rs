@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use tokio_postgres::Row;
 use tracing::trace;
-use trading_base::AmountSpec;
+use trading_base::Amount;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -69,7 +69,7 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     let mut out = Vec::new();
     for claim in claims {
         let (basis, shares) = match claim.amount {
-            AmountSpec::Dollars(dollars) => {
+            Amount::Dollars(dollars) => {
                 if dollars.is_zero() {
                     continue;
                 }
@@ -83,7 +83,7 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 }
                 (allocated_dollars, allocated_dollars / lot.price)
             }
-            AmountSpec::Shares(shares) => {
+            Amount::Shares(shares) => {
                 if shares.is_zero() {
                     continue;
                 }
@@ -93,8 +93,7 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 }
                 (allocated_shares * lot.price, allocated_shares)
             }
-            AmountSpec::Zero => (Decimal::ZERO, Decimal::ZERO),
-            _ => unimplemented!(),
+            Amount::Zero => (Decimal::ZERO, Decimal::ZERO),
         };
         out.push(Allocation::new(
             Owner::Strategy(claim.strategy.clone(), claim.sub_strategy.clone()),
@@ -140,19 +139,19 @@ mod test {
                 "A".into(),
                 None,
                 "AAPL".into(),
-                AmountSpec::Dollars(Decimal::new(-400, 0)),
+                Amount::Dollars(Decimal::new(-400, 0)),
             ),
             Claim::new(
                 "B".into(),
                 None,
                 "AAPL".into(),
-                AmountSpec::Dollars(Decimal::new(400, 0)),
+                Amount::Dollars(Decimal::new(400, 0)),
             ),
             Claim::new(
                 "C".into(),
                 Some("B2".into()),
                 "AAPL".into(),
-                AmountSpec::Shares(Decimal::new(25, 1)),
+                Amount::Shares(Decimal::new(25, 1)),
             ),
         ];
         let allocations = split_lot(&claims, &lot);

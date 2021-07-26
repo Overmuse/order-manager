@@ -3,7 +3,7 @@ use crate::types::Claim;
 use std::convert::TryInto;
 use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
-use trading_base::AmountSpec;
+use trading_base::Amount;
 use uuid::Uuid;
 
 pub async fn get_claims<T: GenericClient>(client: &T) -> Result<Vec<Claim>, Error> {
@@ -43,7 +43,7 @@ pub async fn get_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<C
 pub async fn update_claim_amount<T: GenericClient>(
     client: &T,
     id: Uuid,
-    amount: AmountSpec,
+    amount: Amount,
 ) -> Result<(), Error> {
     trace!(%id, ?amount, "Updating claim amount");
     let (amount, unit) = split_amount_spec(amount);
