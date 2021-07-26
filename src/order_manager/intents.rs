@@ -1,6 +1,6 @@
 use super::OrderManager;
 use crate::db;
-use crate::types::{Claim, Owner, PendingOrder, Position};
+use crate::types::{Claim, Owner, Position};
 use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -121,25 +121,7 @@ impl OrderManager {
                 .context("Failed to save dependent order")?;
             }
 
-            let qty = match sent.side {
-                Side::Buy => sent.qty.to_isize().unwrap(),
-                Side::Sell => -(sent.qty.to_isize().unwrap()),
-            };
-            db::save_pending_order(
-                self.db_client.as_ref(),
-                PendingOrder::new(
-                    sent.client_order_id.clone().unwrap(),
-                    ticker.to_string(),
-                    qty as i32,
-                ),
-            )
-            .await
-            .context("Failed to save pending order")?;
-
-            self.order_sender
-                .send(sent)
-                .await
-                .context("Failed to send order")?;
+            self.send_order(sent).await?
         }
         Ok(())
     }
@@ -200,21 +182,7 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), claim)
                 .await
                 .context("Failed to save claim")?;
-            db::save_pending_order(
-                self.db_client.as_ref(),
-                PendingOrder::new(
-                    order_intent.client_order_id.clone().unwrap(),
-                    position.ticker.to_string(),
-                    (-position.shares).to_i32().unwrap(),
-                ),
-            )
-            .await
-            .context("Failed to save pending order")?;
-            Ok(self
-                .order_sender
-                .send(order_intent)
-                .await
-                .context("Failed to send order")?)
+            self.send_order(order_intent).await
         } else {
             Err(anyhow!("Can't close position of house account"))
         }

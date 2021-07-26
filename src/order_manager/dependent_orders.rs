@@ -12,10 +12,7 @@ impl OrderManager {
         if !orders.is_empty() {
             debug!(id, "Triggering dependent orders");
             for order in orders {
-                self.order_sender
-                    .send(order)
-                    .await
-                    .context("Failed to send dependent-order to OrderSender")?
+                self.send_order(order).await?
             }
         }
         Ok(())

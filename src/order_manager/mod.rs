@@ -1,7 +1,9 @@
 use crate::db;
+use crate::types::PendingOrder;
 use crate::OrderSenderHandle;
-use alpaca::AlpacaMessage;
+use alpaca::{orders::OrderIntent, AlpacaMessage, Side};
 use anyhow::{Context, Result};
+use num_traits::ToPrimitive;
 use rdkafka::consumer::StreamConsumer;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -87,6 +89,29 @@ impl OrderManager {
             Ok(Input::AlpacaMessage(_)) => unreachable!(),
             Err(e) => return Err(e),
         };
+        Ok(())
+    }
+
+    async fn send_order(&self, order: OrderIntent) -> Result<()> {
+        let qty = match order.side {
+            Side::Buy => order.qty.to_i32().unwrap(),
+            Side::Sell => -(order.qty.to_i32().unwrap()),
+        };
+        db::save_pending_order(
+            self.db_client.as_ref(),
+            PendingOrder::new(
+                order.client_order_id.clone().unwrap(),
+                order.symbol.clone(),
+                qty,
+            ),
+        )
+        .await
+        .context("Failed to save pending order")?;
+
+        self.order_sender
+            .send(order)
+            .await
+            .context("Failed to send order")?;
         Ok(())
     }
 }
