@@ -8,7 +8,7 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
 use rust_decimal::Decimal;
 use tracing::{debug, info};
-use trading_base::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
+use trading_base::{Amount, Identifier, PositionIntent, UpdatePolicy};
 use uuid::Uuid;
 
 use order_events::send_order_event;
@@ -20,9 +20,9 @@ mod teardown;
 
 async fn send_position(producer: &FutureProducer, intent: &PositionIntent) -> Result<()> {
     let payload = serde_json::to_vec(intent).unwrap();
-    let key = match &intent.ticker {
-        TickerSpec::Ticker(ticker) => ticker,
-        TickerSpec::All => "",
+    let key = match &intent.identifier {
+        Identifier::Ticker(ticker) => ticker,
+        Identifier::All => "",
     }
     .to_string();
     let message = FutureRecord::to("position-intents")
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
     info!("Test 1");
     send_position(
         &producer,
-        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(100, 0)))
+        &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0)))
             .build()
             .unwrap(),
     )
@@ -102,7 +102,7 @@ async fn main() -> Result<()> {
     info!("Test 2");
     send_position(
         &producer,
-        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(150, 0)))
+        &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(150, 0)))
             .build()
             .unwrap(),
     )
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
     info!("Test 3");
     send_position(
         &producer,
-        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(-100, 0)))
+        &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(-100, 0)))
             .build()
             .unwrap(),
     )
@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
     info!("Test 4");
     send_position(
         &producer,
-        &PositionIntent::builder("S1", "AAPL", AmountSpec::Shares(Decimal::new(-1005, 1)))
+        &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(-1005, 1)))
             .build()
             .unwrap(),
     )
@@ -170,7 +170,7 @@ async fn main() -> Result<()> {
     info!("Test 5");
     send_position(
         &producer,
-        &PositionIntent::builder("S1", "AAPL", AmountSpec::Zero)
+        &PositionIntent::builder("S1", "AAPL", Amount::Zero)
             .build()
             .unwrap(),
     )
@@ -190,7 +190,7 @@ async fn main() -> Result<()> {
     info!("Test 6");
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::Dollars(Decimal::new(10000, 0)))
+        &PositionIntent::builder("S2", "AAPL", Amount::Dollars(Decimal::new(10000, 0)))
             .limit_price(Decimal::new(100, 0))
             .build()
             .unwrap(),
@@ -213,11 +213,11 @@ async fn main() -> Result<()> {
     );
     send_order_event(&producer, &fill_message).await.unwrap();
 
-    // Test 7: Can send `Retain` `AmountSpec`s and not generate orders
+    // Test 7: Can send `Retain` `Amount`s and not generate orders
     info!("Test 7");
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::Zero)
+        &PositionIntent::builder("S2", "AAPL", Amount::Zero)
             .update_policy(UpdatePolicy::RetainLong)
             .build()
             .unwrap(),
@@ -227,7 +227,7 @@ async fn main() -> Result<()> {
     assert!(consumer.recv().now_or_never().is_none());
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::Zero)
+        &PositionIntent::builder("S2", "AAPL", Amount::Zero)
             .update_policy(UpdatePolicy::Retain)
             .build()
             .unwrap(),
@@ -237,7 +237,7 @@ async fn main() -> Result<()> {
     assert!(consumer.recv().now_or_never().is_none());
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::Zero)
+        &PositionIntent::builder("S2", "AAPL", Amount::Zero)
             .update_policy(UpdatePolicy::RetainShort)
             .build()
             .unwrap(),
@@ -258,7 +258,7 @@ async fn main() -> Result<()> {
     info!("Test 8");
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::Shares(Decimal::new(100, 0)))
+        &PositionIntent::builder("S2", "AAPL", Amount::Shares(Decimal::new(100, 0)))
             .before(Utc::now() - Duration::days(1))
             .build()
             .unwrap(),
@@ -271,7 +271,7 @@ async fn main() -> Result<()> {
     info!("Test 9");
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", AmountSpec::Shares(Decimal::new(100, 0)))
+        &PositionIntent::builder("S2", "AAPL", Amount::Shares(Decimal::new(100, 0)))
             .after(Utc::now() + Duration::seconds(1))
             .build()
             .unwrap(),
@@ -291,7 +291,7 @@ async fn main() -> Result<()> {
     info!("Test 10");
     send_position(
         &producer,
-        &PositionIntent::builder("S2", TickerSpec::All, AmountSpec::Zero)
+        &PositionIntent::builder("S2", Identifier::All, Amount::Zero)
             .build()
             .unwrap(),
     )
