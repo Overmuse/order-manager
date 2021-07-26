@@ -18,7 +18,7 @@ pub async fn get_positions_by_owner<T: GenericClient>(
             client.query("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 AND sub_owner = $2 GROUP BY owner, sub_owner, ticker", &[&owner, &sub_owner]).await?
         }
         None => {
-            client.query("SELECT owner, null AS sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 GROUP BY owner, ticker", &[&owner]).await?
+            client.query("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 GROUP BY owner, sub_owner, ticker", &[&owner]).await?
         }
     };
 
