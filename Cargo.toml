@@ -1,6 +1,6 @@
 [package]
 name = "order-manager"
-version = "7.0.2"
+version = "7.0.3"
 authors = ["Sebastian Rollen <seb@overmu.se>"]
 edition = "2018"
 
