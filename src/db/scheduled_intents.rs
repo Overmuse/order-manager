@@ -2,7 +2,7 @@ use super::utils::{split_amount_spec, unite_amount_spec};
 use anyhow::Result;
 use tokio_postgres::GenericClient;
 use tracing::trace;
-use trading_base::{PositionIntent, TickerSpec};
+use trading_base::{Identifier, PositionIntent};
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
@@ -13,16 +13,16 @@ pub async fn get_scheduled_indents<T: GenericClient>(client: &T) -> Result<Vec<P
         .await?
         .into_iter()
         .map(|row| {
-            let ticker = match row.try_get("ticker")? {
-                "all_" => TickerSpec::All,
-                s => TickerSpec::Ticker(s.to_string()),
+            let identifier = match row.try_get("ticker")? {
+                "all_" => Identifier::All,
+                s => Identifier::Ticker(s.to_string()),
             };
             Ok(PositionIntent {
                 id: row.try_get("id")?,
                 strategy: row.try_get("strategy")?,
                 sub_strategy: row.try_get("sub_strategy")?,
                 timestamp: row.try_get("time_stamp")?,
-                ticker,
+                identifier,
                 amount: unite_amount_spec(row.try_get("amount")?, row.try_get("unit")?),
                 update_policy: serde_plain::from_str(row.try_get("update_policy")?)?,
                 decision_price: row.try_get("decision_price")?,
@@ -42,9 +42,9 @@ pub async fn save_scheduled_intent<T: GenericClient>(
 ) -> Result<()> {
     trace!("Saving scheduled intent");
     let (amount, unit) = split_amount_spec(scheduled_intent.amount);
-    let ticker = match scheduled_intent.ticker {
-        TickerSpec::All => "all_".to_string(),
-        TickerSpec::Ticker(ticker) => ticker,
+    let ticker = match scheduled_intent.identifier {
+        Identifier::All => "all_".to_string(),
+        Identifier::Ticker(ticker) => ticker,
     };
     client
         .execute(

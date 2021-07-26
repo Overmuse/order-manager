@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::*;
 use tracing::debug;
-use trading_base::AmountSpec;
+use trading_base::Amount;
 
 impl OrderManager {
     #[tracing::instrument(skip(self, event), fields(id = %event.order.client_order_id))]
@@ -153,13 +153,13 @@ impl OrderManager {
                 .await
                 .context("Failed to get claim")?;
             let amount = match claim.amount {
-                AmountSpec::Dollars(dollars) => {
+                Amount::Dollars(dollars) => {
                     let new_dollars = dollars - allocation.basis;
-                    AmountSpec::Dollars(new_dollars)
+                    Amount::Dollars(new_dollars)
                 }
-                AmountSpec::Shares(shares) => {
+                Amount::Shares(shares) => {
                     let new_shares = shares - allocation.shares;
-                    AmountSpec::Shares(new_shares)
+                    Amount::Shares(new_shares)
                 }
                 _ => unimplemented!(),
             };

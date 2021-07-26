@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use tokio_postgres::Row;
 use tracing::trace;
-use trading_base::AmountSpec;
+use trading_base::Amount;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -12,7 +12,7 @@ pub struct Claim {
     pub strategy: String,
     pub sub_strategy: Option<String>,
     pub ticker: String,
-    pub amount: AmountSpec,
+    pub amount: Amount,
 }
 
 impl Claim {
@@ -21,7 +21,7 @@ impl Claim {
         strategy: String,
         sub_strategy: Option<String>,
         ticker: String,
-        amount: AmountSpec,
+        amount: Amount,
     ) -> Self {
         trace!(%strategy, ?sub_strategy, %ticker, ?amount, "New Claim");
         Self {
@@ -47,12 +47,11 @@ impl TryFrom<Row> for Claim {
     }
 }
 
-fn unite_amount_spec(amount: Decimal, unit: &str) -> AmountSpec {
+fn unite_amount_spec(amount: Decimal, unit: &str) -> Amount {
     match unit {
-        "dollars" => AmountSpec::Dollars(amount),
-        "shares" => AmountSpec::Shares(amount),
-        "percent" => AmountSpec::Percent(amount),
-        "zero" => AmountSpec::Zero,
+        "dollars" => Amount::Dollars(amount),
+        "shares" => Amount::Shares(amount),
+        "zero" => Amount::Zero,
         _ => unreachable!(),
     }
 }

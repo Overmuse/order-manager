@@ -28,18 +28,18 @@ impl IntentScheduler {
         info!("Starting IntentScheduler");
         loop {
             tokio::select! {
-                    intent = self.receiver.recv() => {
-                        if let Some(intent) = intent {
-                            debug!("Intent received for scheduling");
-                            self.schedule(intent)
-                        }
-                    },
-                    intent = self.scheduled_intents.next(), if !self.scheduled_intents.is_empty() => {
-                        if let Some(Ok(intent)) = intent {
-                            debug!("Scheduled intent triggered");
-                            self.sender.send(intent.into_inner()).unwrap()
-                        }
+                intent = self.receiver.recv() => {
+                    if let Some(intent) = intent {
+                        debug!("Intent received for scheduling");
+                        self.schedule(intent)
                     }
+                },
+                intent = self.scheduled_intents.next(), if !self.scheduled_intents.is_empty() => {
+                    if let Some(Ok(intent)) = intent {
+                        debug!("Scheduled intent triggered");
+                        self.sender.send(intent.into_inner()).unwrap()
+                    }
+                }
             }
         }
     }

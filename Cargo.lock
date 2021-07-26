@@ -914,7 +914,7 @@ dependencies = [
 
 [[package]]
 name = "order-manager"
-version = "7.0.4"
+version = "8.0.0"
 dependencies = [
  "alpaca",
  "anyhow",
@@ -1886,8 +1886,8 @@ dependencies = [
 
 [[package]]
 name = "trading-base"
-version = "0.1.0"
-source = "git+ssh://git@github.com/Overmuse/trading-base.git?tag=v0.1.0#a082d3e94fffb10104c0bb4124428fccec439f47"
+version = "0.2.0"
+source = "git+ssh://git@github.com/Overmuse/trading-base.git?tag=v0.2.0#c5dcb43cbc7568dcf380f1cb0451e662cd96f32a"
 dependencies = [
  "chrono",
  "rust_decimal",

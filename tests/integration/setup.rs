@@ -22,7 +22,6 @@ pub async fn setup() -> (
         .unwrap();
     let admin_options = AdminOptions::new();
     let subscriber = FmtSubscriber::builder()
-        .json()
         .with_env_filter(EnvFilter::from_default_env())
         .finish();
     set_global_default(subscriber).unwrap();

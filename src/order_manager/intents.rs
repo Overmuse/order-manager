@@ -1,13 +1,13 @@
 use super::OrderManager;
 use crate::db;
-use crate::types::{Claim, Owner, PendingOrder, Position};
+use crate::types::{Claim, Owner, Position};
 use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
 use rust_decimal::prelude::*;
 use tracing::{debug, trace, warn};
-use trading_base::{AmountSpec, PositionIntent, TickerSpec, UpdatePolicy};
+use trading_base::{Amount, Identifier, PositionIntent, UpdatePolicy};
 use uuid::Uuid;
 
 pub(crate) trait PositionIntentExt {
@@ -64,9 +64,9 @@ impl OrderManager {
     #[tracing::instrument(skip(self, intent))]
     async fn evaluate_intent(&mut self, intent: PositionIntent) -> Result<()> {
         trace!("Evaluating intent");
-        match &intent.ticker.clone() {
-            TickerSpec::Ticker(ticker) => self.evaluate_single_ticker_intent(intent, &ticker).await,
-            TickerSpec::All => self.evaluate_multi_ticker_intent(intent).await,
+        match &intent.identifier.clone() {
+            Identifier::Ticker(ticker) => self.evaluate_single_ticker_intent(intent, &ticker).await,
+            Identifier::All => self.evaluate_multi_ticker_intent(intent).await,
         }
     }
 
@@ -101,7 +101,7 @@ impl OrderManager {
         if let Some(mut claim) = maybe_claim {
             self.net_claim(&mut claim);
             let diff_shares = match claim.amount {
-                AmountSpec::Shares(shares) => shares,
+                Amount::Shares(shares) => shares,
                 _ => unreachable!(),
             };
             db::save_claim(self.db_client.as_ref(), claim)
@@ -121,25 +121,7 @@ impl OrderManager {
                 .context("Failed to save dependent order")?;
             }
 
-            let qty = match sent.side {
-                Side::Buy => sent.qty.to_isize().unwrap(),
-                Side::Sell => -(sent.qty.to_isize().unwrap()),
-            };
-            db::save_pending_order(
-                self.db_client.as_ref(),
-                PendingOrder::new(
-                    sent.client_order_id.clone().unwrap(),
-                    ticker.to_string(),
-                    qty as i32,
-                ),
-            )
-            .await
-            .context("Failed to save pending order")?;
-
-            self.order_sender
-                .send(sent)
-                .await
-                .context("Failed to send order")?;
+            self.send_order(sent).await?
         }
         Ok(())
     }
@@ -147,7 +129,7 @@ impl OrderManager {
     #[tracing::instrument(skip(self, intent))]
     async fn evaluate_multi_ticker_intent(&self, intent: PositionIntent) -> Result<()> {
         trace!("Evaluating multi-ticker intent");
-        if let AmountSpec::Zero = intent.amount {
+        if let Amount::Zero = intent.amount {
             let owner = Owner::Strategy(intent.strategy, intent.sub_strategy);
             let positions = match intent.update_policy {
                 UpdatePolicy::Retain => {
@@ -195,26 +177,12 @@ impl OrderManager {
                 strategy,
                 sub_strategy,
                 position.ticker.clone(),
-                AmountSpec::Shares(-position.shares),
+                Amount::Shares(-position.shares),
             );
             db::save_claim(self.db_client.as_ref(), claim)
                 .await
                 .context("Failed to save claim")?;
-            db::save_pending_order(
-                self.db_client.as_ref(),
-                PendingOrder::new(
-                    order_intent.client_order_id.clone().unwrap(),
-                    position.ticker.to_string(),
-                    (-position.shares).to_i32().unwrap(),
-                ),
-            )
-            .await
-            .context("Failed to save pending order")?;
-            Ok(self
-                .order_sender
-                .send(order_intent)
-                .await
-                .context("Failed to send order")?)
+            self.send_order(order_intent).await
         } else {
             Err(anyhow!("Can't close position of house account"))
         }
@@ -253,7 +221,7 @@ impl OrderManager {
             _ => (),
         };
         let diff_shares = match intent.amount {
-            AmountSpec::Dollars(dollars) => {
+            Amount::Dollars(dollars) => {
                 // TODO: fix the below so we can always have a price
                 let price = intent
                     .decision_price
@@ -266,9 +234,8 @@ impl OrderManager {
                 }
                 dollars / price - strategy_shares
             }
-            AmountSpec::Shares(shares) => shares - strategy_shares,
-            AmountSpec::Zero => -strategy_shares,
-            _ => unimplemented!(),
+            Amount::Shares(shares) => shares - strategy_shares,
+            Amount::Zero => -strategy_shares,
         };
         if diff_shares.is_zero() {
             debug!("No change in shares: No trading needed");
@@ -278,7 +245,7 @@ impl OrderManager {
             intent.strategy.clone(),
             intent.sub_strategy.clone(),
             ticker.to_string(),
-            AmountSpec::Shares(diff_shares),
+            Amount::Shares(diff_shares),
         );
         Some(claim)
     }
