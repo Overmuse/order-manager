@@ -38,12 +38,12 @@ pub async fn get_scheduled_indents<T: GenericClient>(client: &T) -> Result<Vec<P
 #[tracing::instrument(skip(client, scheduled_intent))]
 pub async fn save_scheduled_intent<T: GenericClient>(
     client: &T,
-    scheduled_intent: PositionIntent,
+    scheduled_intent: &PositionIntent,
 ) -> Result<()> {
     trace!("Saving scheduled intent");
-    let (amount, unit) = split_amount_spec(scheduled_intent.amount);
-    let ticker = match scheduled_intent.identifier {
-        Identifier::All => "all_".to_string(),
+    let (amount, unit) = split_amount_spec(&scheduled_intent.amount);
+    let ticker = match &scheduled_intent.identifier {
+        Identifier::All => "all_",
         Identifier::Ticker(ticker) => ticker,
     };
     client

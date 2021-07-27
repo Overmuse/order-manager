@@ -61,7 +61,7 @@ impl OrderManager {
         }
     }
 
-    async fn initalize(&mut self) -> Result<()> {
+    async fn initalize(&self) -> Result<()> {
         debug!("Populating scheduled intents");
         let scheduled_intents = db::get_scheduled_indents(self.db_client.as_ref())
             .await
@@ -76,7 +76,7 @@ impl OrderManager {
         Ok(())
     }
 
-    async fn handle_input(&mut self, input: Result<Input>) -> Result<()> {
+    async fn handle_input(&self, input: Result<Input>) -> Result<()> {
         match input {
             Ok(Input::PositionIntent(intent)) => self
                 .triage_intent(intent)
@@ -99,7 +99,7 @@ impl OrderManager {
         };
         db::save_pending_order(
             self.db_client.as_ref(),
-            PendingOrder::new(
+            &PendingOrder::new(
                 order.client_order_id.clone().unwrap(),
                 order.symbol.clone(),
                 qty,

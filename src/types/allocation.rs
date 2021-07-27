@@ -45,19 +45,20 @@ impl Allocation {
 impl TryFrom<Row> for Allocation {
     type Error = tokio_postgres::Error;
     fn try_from(row: Row) -> Result<Self, Self::Error> {
-        let owner = if row.try_get::<usize, &str>(0)? == "House" {
+        let owner = row.try_get("owner")?;
+        let owner = if owner == "House" {
             Owner::House
         } else {
-            Owner::Strategy(row.try_get(0)?, row.try_get(1)?)
+            Owner::Strategy(owner, row.try_get("sub_owner")?)
         };
         Ok(Allocation {
-            id: row.try_get(7)?,
+            id: row.try_get("id")?,
             owner,
-            claim_id: row.try_get(2)?,
-            lot_id: row.try_get(3)?,
-            ticker: row.try_get(4)?,
-            shares: row.try_get(5)?,
-            basis: row.try_get(6)?,
+            claim_id: row.try_get("claim_id")?,
+            lot_id: row.try_get("lot_id")?,
+            ticker: row.try_get("ticker")?,
+            shares: row.try_get("shares")?,
+            basis: row.try_get("basis")?,
         })
     }
 }

@@ -35,7 +35,7 @@ impl PositionIntentExt for PositionIntent {
 
 impl OrderManager {
     #[tracing::instrument(skip(self, intent), fields(id = %intent.id))]
-    pub async fn triage_intent(&mut self, intent: PositionIntent) -> Result<()> {
+    pub async fn triage_intent(&self, intent: PositionIntent) -> Result<()> {
         debug!("Handling position intent");
         if intent.is_expired() {
             // Intent has already expired, so don't do anything
@@ -53,7 +53,7 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self, intent))]
     pub async fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
-        db::save_scheduled_intent(self.db_client.as_ref(), intent.clone())
+        db::save_scheduled_intent(self.db_client.as_ref(), &intent)
             .await
             .context("Failed to save scheduled intent")?;
         self.scheduler_sender
@@ -62,10 +62,12 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent))]
-    async fn evaluate_intent(&mut self, intent: PositionIntent) -> Result<()> {
+    async fn evaluate_intent(&self, intent: PositionIntent) -> Result<()> {
         trace!("Evaluating intent");
-        match &intent.identifier.clone() {
-            Identifier::Ticker(ticker) => self.evaluate_single_ticker_intent(intent, &ticker).await,
+        match &intent.identifier {
+            Identifier::Ticker(ticker) => {
+                self.evaluate_single_ticker_intent(&intent, &ticker).await
+            }
             Identifier::All => self.evaluate_multi_ticker_intent(intent).await,
         }
     }
@@ -73,57 +75,60 @@ impl OrderManager {
     #[tracing::instrument(skip(self, intent))]
     async fn evaluate_single_ticker_intent(
         &self,
-        intent: PositionIntent,
+        intent: &PositionIntent,
         ticker: &str,
     ) -> Result<()> {
+        let position = db::get_positions_by_owner_and_ticker(
+            self.db_client.as_ref(),
+            &Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
+            &ticker,
+        )
+        .await
+        .context("Failed to get positions")?;
+        let maybe_claim = self.make_claim(intent, &ticker, position);
+        if let Some(mut claim) = maybe_claim {
+            self.net_claim(&mut claim).await?;
+            db::save_claim(self.db_client.as_ref(), &claim)
+                .await
+                .context("Failed to save claim")?;
+            self.generate_orders(intent, ticker, claim).await?;
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn generate_orders(
+        &self,
+        intent: &PositionIntent,
+        ticker: &str,
+        claim: Claim,
+    ) -> Result<()> {
+        let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
+        let diff_shares = match claim.amount {
+            Amount::Shares(shares) => shares,
+            _ => unreachable!(),
+        };
         let pending_shares =
             db::get_pending_order_amount_by_ticker(self.db_client.as_ref(), ticker)
                 .await
                 .context("Failed to get pending order amount")?
                 .unwrap_or(0)
                 .into();
-        let positions = db::get_positions_by_ticker(self.db_client.as_ref(), &ticker)
-            .await
-            .context("Failed to get positions")?;
-        let strategy_shares = positions
-            .iter()
-            .filter_map(|pos| {
-                if let Owner::Strategy(strategy, sub_strategy) = &pos.owner {
-                    if strategy == &intent.strategy && sub_strategy == &intent.sub_strategy {
-                        return Some(pos.shares);
-                    }
-                }
-                None
-            })
-            .sum();
         let total_shares = positions.iter().map(|pos| pos.shares).sum();
-        let maybe_claim = self.make_claim(&intent, &ticker, strategy_shares);
-        if let Some(mut claim) = maybe_claim {
-            self.net_claim(&mut claim);
-            let diff_shares = match claim.amount {
-                Amount::Shares(shares) => shares,
-                _ => unreachable!(),
-            };
-            db::save_claim(self.db_client.as_ref(), claim)
-                .await
-                .context("Failed to save claim")?;
 
-            let (sent, maybe_saved) =
-                self.make_orders(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
-            if let Some(saved) = maybe_saved {
-                debug!("Saving dependent order");
-                db::save_dependent_order(
-                    self.db_client.as_ref(),
-                    &sent.client_order_id.clone().unwrap(),
-                    saved,
-                )
-                .await
-                .context("Failed to save dependent order")?;
-            }
-
-            self.send_order(sent).await?
-        }
-        Ok(())
+        let (sent, maybe_saved) =
+            self.make_orders(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
+        if let Some(saved) = maybe_saved {
+            debug!("Saving dependent order");
+            db::save_dependent_order(
+                self.db_client.as_ref(),
+                sent.client_order_id.as_ref().unwrap(),
+                &saved,
+            )
+            .await
+            .context("Failed to save dependent order")?;
+        };
+        self.send_order(sent).await
     }
 
     #[tracing::instrument(skip(self, intent))]
@@ -131,13 +136,13 @@ impl OrderManager {
         trace!("Evaluating multi-ticker intent");
         if let Amount::Zero = intent.amount {
             let owner = Owner::Strategy(intent.strategy, intent.sub_strategy);
-            let positions = match intent.update_policy {
+            let positions_to_close = match intent.update_policy {
                 UpdatePolicy::Retain => {
                     debug!("UpdatePolicy::Retain: No trading needed");
                     return Ok(());
                 }
                 UpdatePolicy::RetainLong => {
-                    db::get_positions_by_owner(self.db_client.as_ref(), owner)
+                    db::get_positions_by_owner(self.db_client.as_ref(), &owner)
                         .await
                         .context("Failed to get positions")?
                         .into_iter()
@@ -145,20 +150,19 @@ impl OrderManager {
                         .collect()
                 }
                 UpdatePolicy::RetainShort => {
-                    db::get_positions_by_owner(self.db_client.as_ref(), owner)
+                    db::get_positions_by_owner(self.db_client.as_ref(), &owner)
                         .await
                         .context("Failed to get position")?
                         .into_iter()
                         .filter(|pos| pos.is_long())
                         .collect()
                 }
-                UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.as_ref(), owner)
+                UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
                     .await
                     .context("Failed to get positions")?,
             };
-            let id = intent.id.to_string();
-            for position in positions {
-                self.close_position(&id, position)
+            for position in positions_to_close {
+                self.close_position(position)
                     .await
                     .context("Failed to close position")?
             }
@@ -168,18 +172,17 @@ impl OrderManager {
         }
     }
 
-    #[tracing::instrument(skip(self, id, position), fields(position.ticker))]
-    async fn close_position(&self, id: &str, position: Position) -> Result<()> {
+    #[tracing::instrument(skip(self, position), fields(position.ticker))]
+    async fn close_position(&self, position: Position) -> Result<()> {
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
-            let order_intent =
-                make_order_intent(id, &position.ticker, -position.shares, None, None);
+            let order_intent = make_order_intent(&position.ticker, -position.shares, None, None);
             let claim = Claim::new(
                 strategy,
                 sub_strategy,
                 position.ticker.clone(),
                 Amount::Shares(-position.shares),
             );
-            db::save_claim(self.db_client.as_ref(), claim)
+            db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
             self.send_order(order_intent).await
@@ -188,13 +191,14 @@ impl OrderManager {
         }
     }
 
-    #[tracing::instrument(skip(self, intent, ticker, strategy_shares,))]
+    #[tracing::instrument(skip(self, intent, ticker, position))]
     fn make_claim(
         &self,
         intent: &PositionIntent,
         ticker: &str,
-        strategy_shares: Decimal,
+        position: Option<Position>,
     ) -> Option<Claim> {
+        let strategy_shares = position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO);
         match intent.update_policy {
             UpdatePolicy::Retain => {
                 debug!("UpdatePolicy::Retain: No trading needed");
@@ -203,8 +207,7 @@ impl OrderManager {
             UpdatePolicy::RetainLong => {
                 if strategy_shares > Decimal::ZERO {
                     debug!(
-                        "UpdatePolicy::RetainLong and position {}: No trading needed",
-                        strategy_shares
+                        "UpdatePolicy::RetainLong and existing long position: No trading needed",
                     );
                     return None;
                 }
@@ -212,8 +215,7 @@ impl OrderManager {
             UpdatePolicy::RetainShort => {
                 if strategy_shares < Decimal::ZERO {
                     debug!(
-                        "UpdatePolicy::RetainShort and position {}: No trading needed",
-                        strategy_shares
+                        "UpdatePolicy::RetainShort and existing short position: No trading needed",
                     );
                     return None;
                 }
@@ -262,24 +264,17 @@ impl OrderManager {
         let signum_product = (total_shares + pending_shares).signum()
             * (diff_shares + total_shares + pending_shares).signum();
         if !signum_product.is_sign_negative() {
-            let sent = make_order_intent(
-                &intent.id.to_string(),
-                ticker,
-                diff_shares,
-                intent.limit_price,
-                intent.stop_price,
-            );
+            let sent =
+                make_order_intent(ticker, diff_shares, intent.limit_price, intent.stop_price);
             Ok((sent, None))
         } else {
             let sent = make_order_intent(
-                &intent.id.to_string(),
                 ticker,
                 -(total_shares + pending_shares),
                 intent.limit_price,
                 intent.stop_price,
             );
             let saved = make_order_intent(
-                &intent.id.to_string(),
                 ticker,
                 diff_shares + total_shares + pending_shares,
                 intent.limit_price,
@@ -289,12 +284,13 @@ impl OrderManager {
         }
     }
 
-    fn net_claim(&self, _claim: &mut Claim) {}
+    async fn net_claim(&self, _claim: &mut Claim) -> Result<()> {
+        Ok(())
+    }
 }
 
-#[tracing::instrument(skip(prefix, ticker, qty, limit_price, stop_price))]
+#[tracing::instrument(skip(ticker, qty, limit_price, stop_price))]
 fn make_order_intent(
-    prefix: &str,
     ticker: &str,
     qty: Decimal,
     limit_price: Option<Decimal>,
@@ -317,7 +313,7 @@ fn make_order_intent(
     };
 
     OrderIntent::new(ticker)
-        .client_order_id(format!("{}_{}", prefix, Uuid::new_v4().to_string()))
+        .client_order_id(Uuid::new_v4().to_string())
         .qty(qty.abs().ceil().to_usize().unwrap())
         .order_type(order_type)
         .side(side)
