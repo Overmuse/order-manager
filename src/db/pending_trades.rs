@@ -2,6 +2,7 @@ use crate::types::PendingTrade;
 use std::convert::TryInto;
 use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
+use uuid::Uuid;
 
 #[tracing::instrument(skip(client, ticker))]
 pub async fn get_pending_trade_amount_by_ticker<T: GenericClient>(
@@ -33,9 +34,9 @@ pub async fn get_pending_trades<T: GenericClient>(client: &T) -> Result<Vec<Pend
 #[tracing::instrument(skip(client, id))]
 pub async fn get_pending_trade_by_id<T: GenericClient>(
     client: &T,
-    id: &str,
+    id: &Uuid,
 ) -> Result<Option<PendingTrade>, Error> {
-    trace!(id, "Getting pending trade");
+    trace!(%id, "Getting pending trade");
     client
         .query_opt("SELECT * FROM pending_trades where id = $1", &[&id])
         .await?
@@ -46,10 +47,10 @@ pub async fn get_pending_trade_by_id<T: GenericClient>(
 #[tracing::instrument(skip(client, id, qty))]
 pub async fn update_pending_trade_qty<T: GenericClient>(
     client: &T,
-    id: &str,
+    id: &Uuid,
     qty: i32,
 ) -> Result<(), Error> {
-    trace!(id, qty, "Updating pending trade");
+    trace!(%id, qty, "Updating pending trade");
     client
         .execute(
             "UPDATE pending_trades SET pending_qty = $1 WHERE id = $2",
@@ -72,9 +73,9 @@ pub async fn save_pending_trade<T: GenericClient>(
 #[tracing::instrument(skip(client, id))]
 pub async fn delete_pending_trade_by_id<T: GenericClient>(
     client: &T,
-    id: &str,
+    id: &Uuid,
 ) -> Result<(), Error> {
-    trace!(id, "Deleting pending trade");
+    trace!(%id, "Deleting pending trade");
     client
         .execute("DELETE FROM pending_trades WHERE id = $1", &[&id])
         .await?;

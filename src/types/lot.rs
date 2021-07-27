@@ -9,7 +9,7 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Lot {
     pub id: Uuid,
-    pub order_id: String,
+    pub order_id: Uuid,
     pub ticker: String,
     pub fill_time: DateTime<Utc>,
     pub price: Decimal,
@@ -19,7 +19,7 @@ pub struct Lot {
 impl Lot {
     #[tracing::instrument(skip(order_id, ticker, fill_time, price, shares))]
     pub fn new(
-        order_id: String,
+        order_id: Uuid,
         ticker: String,
         fill_time: DateTime<Utc>,
         price: Decimal,

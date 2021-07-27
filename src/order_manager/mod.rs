@@ -3,7 +3,6 @@ use crate::types::PendingTrade;
 use crate::TradeSenderHandle;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
-use num_traits::ToPrimitive;
 use rdkafka::consumer::StreamConsumer;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -12,7 +11,7 @@ use tracing::{debug, error, info};
 use trading_base::PositionIntent;
 use trading_base::TradeIntent;
 
-mod dependent_orders;
+mod dependent_trades;
 mod input;
 mod intents;
 mod order_updates;
@@ -96,7 +95,7 @@ impl OrderManager {
     async fn send_trade(&self, trade: TradeIntent) -> Result<()> {
         db::save_pending_trade(
             self.db_client.as_ref(),
-            PendingTrade::new(trade.id, trade.ticker, trade.qty),
+            PendingTrade::new(trade.id, trade.ticker.clone(), trade.qty as i32),
         )
         .await
         .context("Failed to save pending order")?;

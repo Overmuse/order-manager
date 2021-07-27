@@ -118,7 +118,7 @@ impl OrderManager {
             self.make_trades(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
         if let Some(saved) = maybe_saved {
             debug!("Saving dependent trade");
-            db::save_dependent_trade(self.db_client.as_ref(), &sent.id, saved)
+            db::save_dependent_trade(self.db_client.as_ref(), &sent.id, &saved)
                 .await
                 .context("Failed to save dependent trade")?;
         }
@@ -302,5 +302,11 @@ fn make_trade_intent(
         (None, None) => OrderType::Market,
     };
 
-    TradeIntent::new(ticker, qty.to_isize().unwrap()).order_type(order_type)
+    TradeIntent::new(
+        ticker,
+        qty.round_dp_with_strategy(0, RoundingStrategy::AwayFromZero)
+            .to_isize()
+            .unwrap(),
+    )
+    .order_type(order_type)
 }
