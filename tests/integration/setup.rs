@@ -29,9 +29,9 @@ pub async fn setup() -> (
     admin
         .create_topics(
             &[
-                NewTopic::new("position-intents", 1, TopicReplication::Fixed(1)),
-                NewTopic::new("order-intents", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("overmuse-trades", 1, TopicReplication::Fixed(1)),
+                NewTopic::new("position-intents", 1, TopicReplication::Fixed(1)),
+                NewTopic::new("trade-intents", 1, TopicReplication::Fixed(1)),
             ],
             &admin_options,
         )
