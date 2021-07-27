@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[tracing::instrument(skip(client, id, dependent_trade))]
 pub async fn save_dependent_trade<T: GenericClient>(
     client: &T,
-    id: &Uuid,
+    id: Uuid,
     dependent_trade: &TradeIntent,
 ) -> Result<()> {
     trace!(%id, "Saving dependent trade");
@@ -40,7 +40,7 @@ pub async fn save_dependent_trade<T: GenericClient>(
 #[tracing::instrument(skip(client, id))]
 pub async fn take_dependent_trades<T: GenericClient>(
     client: &T,
-    id: &Uuid,
+    id: Uuid,
 ) -> Result<Vec<TradeIntent>> {
     trace!(%id, "Saving dependent trade");
     client

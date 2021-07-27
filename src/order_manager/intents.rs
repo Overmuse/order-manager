@@ -89,13 +89,13 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
-            self.generate_orders(intent, ticker, claim).await?;
+            self.generate_trades(intent, ticker, claim).await?;
         }
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn generate_orders(
+    async fn generate_trades(
         &self,
         intent: &PositionIntent,
         ticker: &str,
@@ -118,7 +118,7 @@ impl OrderManager {
             self.make_trades(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
         if let Some(saved) = maybe_saved {
             debug!("Saving dependent trade");
-            db::save_dependent_trade(self.db_client.as_ref(), &sent.id, &saved)
+            db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
                 .await
                 .context("Failed to save dependent trade")?;
         }

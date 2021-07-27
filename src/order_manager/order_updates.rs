@@ -22,7 +22,7 @@ impl OrderManager {
         debug!(status = ?event.event, "Order status update");
         match event.event {
             Event::Canceled { .. } | Event::Expired { .. } | Event::Rejected { .. } => {
-                db::delete_pending_trade_by_id(self.db_client.as_ref(), &id)
+                db::delete_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to delete pending trade")?;
             }
@@ -31,11 +31,11 @@ impl OrderManager {
             } => {
                 debug!("Order filled");
                 let new_lot = self
-                    .make_lot(&id, ticker, timestamp, price, qty)
+                    .make_lot(id, ticker, timestamp, price, qty)
                     .await
                     .context("Failed to make lot")?;
                 debug!("Deleting pending trade");
-                db::delete_pending_trade_by_id(self.db_client.as_ref(), &id)
+                db::delete_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to delete pending trade")?;
                 debug!("Saving lot");
@@ -47,14 +47,14 @@ impl OrderManager {
                     .await
                     .context("Failed to assign lot")?;
                 debug!("Triggering dependent trades");
-                self.trigger_dependent_trades(&id)
+                self.trigger_dependent_trades(id)
                     .await
                     .context("Failed to trigger dependent-trades")?
             }
             Event::PartialFill {
                 price, timestamp, ..
             } => {
-                let pending_trade = db::get_pending_trade_by_id(self.db_client.as_ref(), &id)
+                let pending_trade = db::get_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to get pending trade")?
                     .ok_or_else(|| anyhow!("Partial fill received without seeing `new` event"))?;
@@ -63,11 +63,11 @@ impl OrderManager {
                     Side::Sell => -(event.order.filled_qty.to_isize().unwrap()),
                 };
                 let pending_qty = pending_trade.qty - filled_qty as i32;
-                db::update_pending_trade_qty(self.db_client.as_ref(), &id, pending_qty)
+                db::update_pending_trade_qty(self.db_client.as_ref(), id, pending_qty)
                     .await
                     .context("Failed to update pending trade quantity")?;
                 let new_lot = self
-                    .make_lot(&id, ticker, timestamp, price, qty)
+                    .make_lot(id, ticker, timestamp, price, qty)
                     .await
                     .context("Failed to make lot")?;
                 db::save_lot(self.db_client.as_ref(), &new_lot)
@@ -85,7 +85,7 @@ impl OrderManager {
     #[tracing::instrument(skip(self, ticker, timestamp, price, position_quantity))]
     async fn make_lot(
         &self,
-        id: &Uuid,
+        id: Uuid,
         ticker: &str,
         timestamp: DateTime<Utc>,
         price: Decimal,
@@ -96,7 +96,7 @@ impl OrderManager {
         let new_price =
             (price * position_quantity - previous_quantity * previous_price) / new_quantity;
         Ok(Lot::new(
-            *id,
+            id,
             ticker.to_string(),
             timestamp,
             new_price,
@@ -105,7 +105,7 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, order_id))]
-    async fn previous_fill_data(&self, order_id: &Uuid) -> Result<(Decimal, Decimal)> {
+    async fn previous_fill_data(&self, order_id: Uuid) -> Result<(Decimal, Decimal)> {
         let previous_lots = db::get_lots_by_order_id(self.db_client.as_ref(), order_id)
             .await
             .context("Failed to get lots")?;

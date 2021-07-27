@@ -98,12 +98,12 @@ impl OrderManager {
             PendingTrade::new(trade.id, trade.ticker.clone(), trade.qty as i32),
         )
         .await
-        .context("Failed to save pending order")?;
+        .context("Failed to save pending trade")?;
 
         self.trade_sender
             .send(trade)
             .await
-            .context("Failed to send order")?;
+            .context("Failed to send trade")?;
         Ok(())
     }
 }

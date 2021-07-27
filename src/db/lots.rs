@@ -18,7 +18,7 @@ pub async fn get_lots<T: GenericClient>(client: &T) -> Result<Vec<Lot>, Error> {
 #[tracing::instrument(skip(client, order_id))]
 pub async fn get_lots_by_order_id<T: GenericClient>(
     client: &T,
-    order_id: &Uuid,
+    order_id: Uuid,
 ) -> Result<Vec<Lot>, Error> {
     trace!(%order_id, "Getting lots");
     client

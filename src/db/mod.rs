@@ -1,6 +1,6 @@
 mod allocations;
 mod claims;
-mod dependent_orders;
+mod dependent_trades;
 mod lots;
 mod pending_trades;
 mod positions;
@@ -8,7 +8,7 @@ mod scheduled_intents;
 mod utils;
 pub use allocations::*;
 pub use claims::*;
-pub use dependent_orders::*;
+pub use dependent_trades::*;
 pub use lots::*;
 pub use pending_trades::*;
 pub use positions::*;

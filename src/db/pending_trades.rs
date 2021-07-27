@@ -34,7 +34,7 @@ pub async fn get_pending_trades<T: GenericClient>(client: &T) -> Result<Vec<Pend
 #[tracing::instrument(skip(client, id))]
 pub async fn get_pending_trade_by_id<T: GenericClient>(
     client: &T,
-    id: &Uuid,
+    id: Uuid,
 ) -> Result<Option<PendingTrade>, Error> {
     trace!(%id, "Getting pending trade");
     client
@@ -47,7 +47,7 @@ pub async fn get_pending_trade_by_id<T: GenericClient>(
 #[tracing::instrument(skip(client, id, qty))]
 pub async fn update_pending_trade_qty<T: GenericClient>(
     client: &T,
-    id: &Uuid,
+    id: Uuid,
     qty: i32,
 ) -> Result<(), Error> {
     trace!(%id, qty, "Updating pending trade");
@@ -73,7 +73,7 @@ pub async fn save_pending_trade<T: GenericClient>(
 #[tracing::instrument(skip(client, id))]
 pub async fn delete_pending_trade_by_id<T: GenericClient>(
     client: &T,
-    id: &Uuid,
+    id: Uuid,
 ) -> Result<(), Error> {
     trace!(%id, "Deleting pending trade");
     client
