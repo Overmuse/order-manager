@@ -171,7 +171,7 @@ impl OrderManager {
     #[tracing::instrument(skip(self, position), fields(position.ticker))]
     async fn close_position(&self, position: Position) -> Result<()> {
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
-            let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None);
+            let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None)?;
             let claim = Claim::new(
                 strategy,
                 sub_strategy,
@@ -261,7 +261,7 @@ impl OrderManager {
             * (diff_shares + total_shares + pending_shares).signum();
         if !signum_product.is_sign_negative() {
             let sent =
-                make_trade_intent(ticker, diff_shares, intent.limit_price, intent.stop_price);
+                make_trade_intent(ticker, diff_shares, intent.limit_price, intent.stop_price)?;
             Ok((sent, None))
         } else {
             let sent = make_trade_intent(
@@ -269,13 +269,13 @@ impl OrderManager {
                 -(total_shares + pending_shares),
                 intent.limit_price,
                 intent.stop_price,
-            );
+            )?;
             let saved = make_trade_intent(
                 ticker,
                 diff_shares + total_shares + pending_shares,
                 intent.limit_price,
                 intent.stop_price,
-            );
+            )?;
             Ok((sent, Some(saved)))
         }
     }
@@ -291,7 +291,7 @@ fn make_trade_intent(
     qty: Decimal,
     limit_price: Option<Decimal>,
     stop_price: Option<Decimal>,
-) -> TradeIntent {
+) -> Result<TradeIntent> {
     let order_type = match (limit_price, stop_price) {
         (Some(limit_price), Some(stop_price)) => OrderType::StopLimit {
             limit_price,
@@ -302,11 +302,12 @@ fn make_trade_intent(
         (None, None) => OrderType::Market,
     };
 
-    TradeIntent::new(
+    let intent = TradeIntent::new(
         ticker,
         qty.round_dp_with_strategy(0, RoundingStrategy::AwayFromZero)
             .to_isize()
-            .unwrap(),
+            .ok_or_else(|| anyhow!("Failed to convert decimal"))?,
     )
-    .order_type(order_type)
+    .order_type(order_type);
+    Ok(intent)
 }

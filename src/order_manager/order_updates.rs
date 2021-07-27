@@ -16,8 +16,10 @@ impl OrderManager {
         let id = Uuid::parse_str(&event.order.client_order_id)?;
         let ticker = &event.order.symbol;
         let qty = match event.order.side {
-            Side::Buy => Decimal::from_usize(event.order.qty).unwrap(),
-            Side::Sell => -Decimal::from_usize(event.order.qty).unwrap(),
+            Side::Buy => Decimal::from_usize(event.order.qty)
+                .ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
+            Side::Sell => -Decimal::from_usize(event.order.qty)
+                .ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
         };
         debug!(status = ?event.event, "Order status update");
         match event.event {
@@ -59,8 +61,18 @@ impl OrderManager {
                     .context("Failed to get pending trade")?
                     .ok_or_else(|| anyhow!("Partial fill received without seeing `new` event"))?;
                 let filled_qty = match event.order.side {
-                    Side::Buy => event.order.filled_qty.to_isize().unwrap(),
-                    Side::Sell => -(event.order.filled_qty.to_isize().unwrap()),
+                    Side::Buy => event
+                        .order
+                        .filled_qty
+                        .to_isize()
+                        .ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
+                    Side::Sell => {
+                        -(event
+                            .order
+                            .filled_qty
+                            .to_isize()
+                            .ok_or_else(|| anyhow!("Failed to convert Decimal"))?)
+                    }
                 };
                 let pending_qty = pending_trade.qty - filled_qty as i32;
                 db::update_pending_trade_qty(self.db_client.as_ref(), id, pending_qty)
