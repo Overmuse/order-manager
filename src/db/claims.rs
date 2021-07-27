@@ -43,7 +43,7 @@ pub async fn get_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<C
 pub async fn update_claim_amount<T: GenericClient>(
     client: &T,
     id: Uuid,
-    amount: Amount,
+    amount: &Amount,
 ) -> Result<(), Error> {
     trace!(%id, ?amount, "Updating claim amount");
     let (amount, unit) = split_amount_spec(amount);
@@ -66,9 +66,9 @@ pub async fn delete_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Resul
 }
 
 #[tracing::instrument(skip(client, claim))]
-pub async fn save_claim<T: GenericClient>(client: &T, claim: Claim) -> Result<(), Error> {
+pub async fn save_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result<(), Error> {
     trace!(id = %claim.id, "Saving claim");
-    let (amount, unit) = split_amount_spec(claim.amount);
+    let (amount, unit) = split_amount_spec(&claim.amount);
     client.execute("INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);", &[
             &claim.id,
             &claim.strategy,

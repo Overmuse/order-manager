@@ -18,12 +18,12 @@ pub async fn get_allocations<T: GenericClient>(client: &T) -> Result<Vec<Allocat
 pub async fn set_allocation_owner<T: GenericClient>(
     client: &T,
     id: Uuid,
-    owner: Owner,
+    owner: &Owner,
 ) -> Result<(), Error> {
     trace!("Updating allocation owner");
     let (owner, sub_owner) = match owner {
-        Owner::House => ("House".to_string(), None),
-        Owner::Strategy(owner, sub_owner) => (owner, sub_owner),
+        Owner::House => ("House", None),
+        Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
     };
     match sub_owner {
         Some(sub_owner) => {
@@ -49,12 +49,12 @@ pub async fn set_allocation_owner<T: GenericClient>(
 #[tracing::instrument(skip(client, allocation))]
 pub async fn save_allocation<T: GenericClient>(
     client: &T,
-    allocation: Allocation,
+    allocation: &Allocation,
 ) -> Result<(), Error> {
     trace!("Saving allocation");
-    let (owner, sub_owner) = match allocation.owner {
-        Owner::House => ("House".to_string(), None),
-        Owner::Strategy(owner, sub_owner) => (owner, sub_owner),
+    let (owner, sub_owner) = match &allocation.owner {
+        Owner::House => ("House", None),
+        Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
     };
     client.execute("INSERT INTO allocations (id, owner, sub_owner, claim_id, lot_id, ticker, shares, basis) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);", &[
             &allocation.id,

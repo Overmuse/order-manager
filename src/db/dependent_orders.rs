@@ -8,7 +8,7 @@ use tracing::trace;
 pub async fn save_dependent_order<T: GenericClient>(
     client: &T,
     id: &str,
-    dependent_order: OrderIntent,
+    dependent_order: &OrderIntent,
 ) -> Result<()> {
     trace!(id, "Saving dependent order");
     let (order_type, limit_price, stop_price) = match dependent_order.order_type {

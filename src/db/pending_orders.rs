@@ -62,7 +62,7 @@ pub async fn update_pending_order_qty<T: GenericClient>(
 #[tracing::instrument(skip(client, pending_order))]
 pub async fn save_pending_order<T: GenericClient>(
     client: &T,
-    pending_order: PendingOrder,
+    pending_order: &PendingOrder,
 ) -> Result<(), Error> {
     trace!(id = %pending_order.id, "Saving pending order");
     client.execute("INSERT INTO pending_orders (id, ticker, quantity, pending_quantity) VALUES ($1, $2, $3, $4)", &[&pending_order.id, &pending_order.ticker, &pending_order.qty, &pending_order.pending_qty]).await?;

@@ -6,12 +6,12 @@ use tracing::trace;
 #[tracing::instrument(skip(client, owner))]
 pub async fn get_positions_by_owner<T: GenericClient>(
     client: &T,
-    owner: Owner,
+    owner: &Owner,
 ) -> Result<Vec<Position>, Error> {
     trace!("Getting positions");
     let (owner, sub_owner) = match owner {
-        Owner::House => ("House".to_string(), None),
-        Owner::Strategy(owner, sub_owner) => (owner, sub_owner),
+        Owner::House => ("House", None),
+        Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
     };
     let res = match sub_owner {
         Some(sub_owner) => {
@@ -36,6 +36,29 @@ pub async fn get_positions_by_ticker<T: GenericClient>(
             .into_iter()
             .map(TryInto::try_into)
             .collect()
+}
+
+#[tracing::instrument(skip(client, owner, ticker))]
+pub async fn get_positions_by_owner_and_ticker<T: GenericClient>(
+    client: &T,
+    owner: &Owner,
+    ticker: &str,
+) -> Result<Option<Position>, Error> {
+    trace!("Getting positions");
+    let (owner, sub_owner) = match owner {
+        Owner::House => ("House", None),
+        Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
+    };
+    let res = match sub_owner {
+        Some(sub_owner) => {
+            client.query_opt("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 AND sub_owner = $2 AND ticker = $3 GROUP BY owner, sub_owner, ticker", &[&owner, &sub_owner, &ticker]).await?
+        }
+        None => {
+            client.query_opt("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 AND ticker = $2 GROUP BY owner, sub_owner, ticker", &[&owner, &ticker]).await?
+        }
+    };
+
+    res.map(TryInto::try_into).transpose()
 }
 
 #[tracing::instrument(skip(client))]

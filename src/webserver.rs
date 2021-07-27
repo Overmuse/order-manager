@@ -24,7 +24,7 @@ async fn get_allocations(db: Db) -> Result<impl Reply, Rejection> {
 
 #[tracing::instrument(skip(db))]
 async fn set_allocation_owner(id: Uuid, owner: Owner, db: Db) -> Result<impl Reply, Rejection> {
-    let allocations = db::set_allocation_owner(db.as_ref(), id, owner)
+    let allocations = db::set_allocation_owner(db.as_ref(), id, &owner)
         .await
         .map_err(|_| reject())?;
     Ok(json(&allocations))
