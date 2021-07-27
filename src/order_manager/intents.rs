@@ -136,7 +136,7 @@ impl OrderManager {
         trace!("Evaluating multi-ticker intent");
         if let Amount::Zero = intent.amount {
             let owner = Owner::Strategy(intent.strategy, intent.sub_strategy);
-            let positions = match intent.update_policy {
+            let positions_to_close = match intent.update_policy {
                 UpdatePolicy::Retain => {
                     debug!("UpdatePolicy::Retain: No trading needed");
                     return Ok(());
@@ -161,9 +161,8 @@ impl OrderManager {
                     .await
                     .context("Failed to get positions")?,
             };
-            let id = intent.id.to_string();
-            for position in positions {
-                self.close_position(&id, position)
+            for position in positions_to_close {
+                self.close_position(position)
                     .await
                     .context("Failed to close position")?
             }
@@ -173,11 +172,10 @@ impl OrderManager {
         }
     }
 
-    #[tracing::instrument(skip(self, id, position), fields(position.ticker))]
-    async fn close_position(&self, id: &str, position: Position) -> Result<()> {
+    #[tracing::instrument(skip(self, position), fields(position.ticker))]
+    async fn close_position(&self, position: Position) -> Result<()> {
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
-            let order_intent =
-                make_order_intent(id, &position.ticker, -position.shares, None, None);
+            let order_intent = make_order_intent(&position.ticker, -position.shares, None, None);
             let claim = Claim::new(
                 strategy,
                 sub_strategy,
@@ -266,24 +264,17 @@ impl OrderManager {
         let signum_product = (total_shares + pending_shares).signum()
             * (diff_shares + total_shares + pending_shares).signum();
         if !signum_product.is_sign_negative() {
-            let sent = make_order_intent(
-                &intent.id.to_string(),
-                ticker,
-                diff_shares,
-                intent.limit_price,
-                intent.stop_price,
-            );
+            let sent =
+                make_order_intent(ticker, diff_shares, intent.limit_price, intent.stop_price);
             Ok((sent, None))
         } else {
             let sent = make_order_intent(
-                &intent.id.to_string(),
                 ticker,
                 -(total_shares + pending_shares),
                 intent.limit_price,
                 intent.stop_price,
             );
             let saved = make_order_intent(
-                &intent.id.to_string(),
                 ticker,
                 diff_shares + total_shares + pending_shares,
                 intent.limit_price,
@@ -298,9 +289,8 @@ impl OrderManager {
     }
 }
 
-#[tracing::instrument(skip(prefix, ticker, qty, limit_price, stop_price))]
+#[tracing::instrument(skip(ticker, qty, limit_price, stop_price))]
 fn make_order_intent(
-    prefix: &str,
     ticker: &str,
     qty: Decimal,
     limit_price: Option<Decimal>,
@@ -323,7 +313,7 @@ fn make_order_intent(
     };
 
     OrderIntent::new(ticker)
-        .client_order_id(format!("{}_{}", prefix, Uuid::new_v4().to_string()))
+        .client_order_id(Uuid::new_v4().to_string())
         .qty(qty.abs().ceil().to_usize().unwrap())
         .order_type(order_type)
         .side(side)

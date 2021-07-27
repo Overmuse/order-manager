@@ -37,10 +37,11 @@ impl Position {
 impl TryFrom<Row> for Position {
     type Error = tokio_postgres::Error;
     fn try_from(row: Row) -> Result<Self, Self::Error> {
-        let owner = if row.try_get::<&str, &str>("owner")? == "House" {
+        let owner = row.try_get("owner")?;
+        let owner = if owner == "House" {
             Owner::House
         } else {
-            Owner::Strategy(row.try_get("owner")?, row.try_get("sub_owner")?)
+            Owner::Strategy(owner, row.try_get("sub_owner")?)
         };
         Ok(Self {
             owner,
