@@ -12,7 +12,7 @@ impl OrderManager {
         if !orders.is_empty() {
             debug!(id, "Triggering dependent orders");
             for order in orders {
-                self.send_order(order).await?
+                self.send_trade(order).await?
             }
         }
         Ok(())

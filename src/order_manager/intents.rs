@@ -1,14 +1,12 @@
 use super::OrderManager;
 use crate::db;
 use crate::types::{Claim, Owner, Position};
-use alpaca::{orders::OrderIntent, OrderType, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
 use rust_decimal::prelude::*;
 use tracing::{debug, trace, warn};
-use trading_base::{Amount, Identifier, PositionIntent, UpdatePolicy};
-use uuid::Uuid;
+use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, UpdatePolicy};
 
 pub(crate) trait PositionIntentExt {
     fn is_expired(&self) -> bool;
@@ -109,26 +107,24 @@ impl OrderManager {
             _ => unreachable!(),
         };
         let pending_shares =
-            db::get_pending_order_amount_by_ticker(self.db_client.as_ref(), ticker)
+            db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
                 .await
-                .context("Failed to get pending order amount")?
+                .context("Failed to get pending trade amount")?
                 .unwrap_or(0)
                 .into();
         let total_shares = positions.iter().map(|pos| pos.shares).sum();
 
         let (sent, maybe_saved) =
-            self.make_orders(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
+            self.make_trades(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
         if let Some(saved) = maybe_saved {
-            debug!("Saving dependent order");
-            db::save_dependent_order(
-                self.db_client.as_ref(),
-                sent.client_order_id.as_ref().unwrap(),
-                &saved,
-            )
-            .await
-            .context("Failed to save dependent order")?;
-        };
-        self.send_order(sent).await
+            debug!("Saving dependent trade");
+            db::save_dependent_trade(self.db_client.as_ref(), &sent.id, saved)
+                .await
+                .context("Failed to save dependent trade")?;
+        }
+
+        self.send_trade(sent).await?;
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, intent))]
@@ -175,7 +171,7 @@ impl OrderManager {
     #[tracing::instrument(skip(self, position), fields(position.ticker))]
     async fn close_position(&self, position: Position) -> Result<()> {
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
-            let order_intent = make_order_intent(&position.ticker, -position.shares, None, None);
+            let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None);
             let claim = Claim::new(
                 strategy,
                 sub_strategy,
@@ -185,7 +181,7 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
-            self.send_order(order_intent).await
+            self.send_trade(trade_intent).await
         } else {
             Err(anyhow!("Can't close position of house account"))
         }
@@ -253,28 +249,28 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent, ticker, diff_shares, total_shares, pending_shares))]
-    fn make_orders(
+    fn make_trades(
         &self,
         intent: &PositionIntent,
         ticker: &str,
         diff_shares: Decimal,
         total_shares: Decimal,
         pending_shares: Decimal,
-    ) -> Result<(OrderIntent, Option<OrderIntent>)> {
+    ) -> Result<(TradeIntent, Option<TradeIntent>)> {
         let signum_product = (total_shares + pending_shares).signum()
             * (diff_shares + total_shares + pending_shares).signum();
         if !signum_product.is_sign_negative() {
             let sent =
-                make_order_intent(ticker, diff_shares, intent.limit_price, intent.stop_price);
+                make_trade_intent(ticker, diff_shares, intent.limit_price, intent.stop_price);
             Ok((sent, None))
         } else {
-            let sent = make_order_intent(
+            let sent = make_trade_intent(
                 ticker,
                 -(total_shares + pending_shares),
                 intent.limit_price,
                 intent.stop_price,
             );
-            let saved = make_order_intent(
+            let saved = make_trade_intent(
                 ticker,
                 diff_shares + total_shares + pending_shares,
                 intent.limit_price,
@@ -290,18 +286,12 @@ impl OrderManager {
 }
 
 #[tracing::instrument(skip(ticker, qty, limit_price, stop_price))]
-fn make_order_intent(
+fn make_trade_intent(
     ticker: &str,
     qty: Decimal,
     limit_price: Option<Decimal>,
     stop_price: Option<Decimal>,
-) -> OrderIntent {
-    let side = if qty > Decimal::ZERO {
-        Side::Buy
-    } else {
-        Side::Sell
-    };
-
+) -> TradeIntent {
     let order_type = match (limit_price, stop_price) {
         (Some(limit_price), Some(stop_price)) => OrderType::StopLimit {
             limit_price,
@@ -312,9 +302,5 @@ fn make_order_intent(
         (None, None) => OrderType::Market,
     };
 
-    OrderIntent::new(ticker)
-        .client_order_id(Uuid::new_v4().to_string())
-        .qty(qty.abs().ceil().to_usize().unwrap())
-        .order_type(order_type)
-        .side(side)
+    TradeIntent::new(ticker, qty.to_isize().unwrap()).order_type(order_type)
 }
