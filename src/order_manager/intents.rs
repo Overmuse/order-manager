@@ -79,11 +79,11 @@ impl OrderManager {
         let position = db::get_positions_by_owner_and_ticker(
             self.db_client.as_ref(),
             &Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
-            &ticker,
+            ticker,
         )
         .await
         .context("Failed to get positions")?;
-        let maybe_claim = self.make_claim(intent, &ticker, position).await?;
+        let maybe_claim = self.make_claim(intent, ticker, position).await?;
         if let Some(mut claim) = maybe_claim {
             self.net_claim(&mut claim).await?;
             db::save_claim(self.db_client.as_ref(), &claim)
@@ -131,7 +131,7 @@ impl OrderManager {
         let total_shares = positions.iter().map(|pos| pos.shares).sum();
 
         let (sent, maybe_saved) =
-            self.make_trades(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
+            self.make_trades(intent, ticker, diff_shares, total_shares, pending_shares)?;
         if let Some(saved) = maybe_saved {
             debug!("Saving dependent trade");
             db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
