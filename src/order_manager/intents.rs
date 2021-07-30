@@ -63,9 +63,7 @@ impl OrderManager {
     async fn evaluate_intent(&self, intent: PositionIntent) -> Result<()> {
         trace!("Evaluating intent");
         match &intent.identifier {
-            Identifier::Ticker(ticker) => {
-                self.evaluate_single_ticker_intent(&intent, &ticker).await
-            }
+            Identifier::Ticker(ticker) => self.evaluate_single_ticker_intent(&intent, ticker).await,
             Identifier::All => self.evaluate_multi_ticker_intent(intent).await,
         }
     }
@@ -79,11 +77,11 @@ impl OrderManager {
         let position = db::get_positions_by_owner_and_ticker(
             self.db_client.as_ref(),
             &Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
-            &ticker,
+            ticker,
         )
         .await
         .context("Failed to get positions")?;
-        let maybe_claim = self.make_claim(intent, &ticker, position);
+        let maybe_claim = self.make_claim(intent, ticker, position).await?;
         if let Some(mut claim) = maybe_claim {
             self.net_claim(&mut claim).await?;
             db::save_claim(self.db_client.as_ref(), &claim)
@@ -104,6 +102,22 @@ impl OrderManager {
         let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
         let diff_shares = match claim.amount {
             Amount::Shares(shares) => shares,
+            Amount::Dollars(dollars) => {
+                let price = self
+                    .redis
+                    .get::<Option<f64>>(&format!("price/{}", ticker))
+                    .await?
+                    .map(Decimal::from_f64)
+                    .flatten()
+                    .or(intent.limit_price);
+                match price {
+                    Some(price) => dollars / price,
+                    None => {
+                        warn!("Missing price");
+                        return Ok(());
+                    }
+                }
+            }
             _ => unreachable!(),
         };
         let pending_shares =
@@ -115,7 +129,7 @@ impl OrderManager {
         let total_shares = positions.iter().map(|pos| pos.shares).sum();
 
         let (sent, maybe_saved) =
-            self.make_trades(&intent, &ticker, diff_shares, total_shares, pending_shares)?;
+            self.make_trades(intent, ticker, diff_shares, total_shares, pending_shares)?;
         if let Some(saved) = maybe_saved {
             debug!("Saving dependent trade");
             db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
@@ -188,24 +202,24 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent, ticker, position))]
-    fn make_claim(
+    async fn make_claim(
         &self,
         intent: &PositionIntent,
         ticker: &str,
         position: Option<Position>,
-    ) -> Option<Claim> {
+    ) -> Result<Option<Claim>> {
         let strategy_shares = position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO);
         match intent.update_policy {
             UpdatePolicy::Retain => {
                 debug!("UpdatePolicy::Retain: No trading needed");
-                return None;
+                return Ok(None);
             }
             UpdatePolicy::RetainLong => {
                 if strategy_shares > Decimal::ZERO {
                     debug!(
                         "UpdatePolicy::RetainLong and existing long position: No trading needed",
                     );
-                    return None;
+                    return Ok(None);
                 }
             }
             UpdatePolicy::RetainShort => {
@@ -213,39 +227,40 @@ impl OrderManager {
                     debug!(
                         "UpdatePolicy::RetainShort and existing short position: No trading needed",
                     );
-                    return None;
+                    return Ok(None);
                 }
             }
             _ => (),
         };
-        let diff_shares = match intent.amount {
+        let diff_amount = match intent.amount {
             Amount::Dollars(dollars) => {
-                // TODO: fix the below so we can always have a price
-                let price = intent
-                    .decision_price
-                    .or(intent.limit_price)
-                    .or(intent.stop_price)
-                    .expect("Need either limit price, stop price or decision price");
-                if price.is_zero() {
-                    warn!("Price of intent cannot be zero");
-                    return None;
+                let price: Option<f64> = self.redis.get(&format!("price/{}", ticker)).await?;
+                let price = price
+                    .map(Decimal::from_f64)
+                    .flatten()
+                    .or(intent.limit_price);
+                match price {
+                    Some(price) => Amount::Dollars(dollars - price * strategy_shares),
+                    None => {
+                        warn!("Missing price");
+                        return Ok(None);
+                    }
                 }
-                dollars / price - strategy_shares
             }
-            Amount::Shares(shares) => shares - strategy_shares,
-            Amount::Zero => -strategy_shares,
+            Amount::Shares(shares) => Amount::Shares(shares - strategy_shares),
+            Amount::Zero => Amount::Shares(-strategy_shares),
         };
-        if diff_shares.is_zero() {
+        if diff_amount.is_zero() {
             debug!("No change in shares: No trading needed");
-            return None;
+            return Ok(None);
         }
         let claim = Claim::new(
             intent.strategy.clone(),
             intent.sub_strategy.clone(),
             ticker.to_string(),
-            Amount::Shares(diff_shares),
+            diff_amount,
         );
-        Some(claim)
+        Ok(Some(claim))
     }
 
     #[tracing::instrument(skip(self, intent, ticker, diff_shares, total_shares, pending_shares))]

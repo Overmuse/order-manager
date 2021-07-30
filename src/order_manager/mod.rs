@@ -1,4 +1,5 @@
 use crate::db;
+use crate::redis::Redis;
 use crate::types::PendingTrade;
 use crate::TradeSenderHandle;
 use alpaca::AlpacaMessage;
@@ -24,6 +25,7 @@ pub struct OrderManager {
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
     trade_sender: TradeSenderHandle,
     db_client: Arc<Client>,
+    redis: Redis,
 }
 
 impl OrderManager {
@@ -33,6 +35,7 @@ impl OrderManager {
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
         trade_sender: TradeSenderHandle,
         db_client: Arc<Client>,
+        redis: Redis,
     ) -> Self {
         Self {
             kafka_consumer,
@@ -40,6 +43,7 @@ impl OrderManager {
             scheduler_receiver,
             trade_sender,
             db_client,
+            redis,
         }
     }
 

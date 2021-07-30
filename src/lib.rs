@@ -8,6 +8,7 @@ use tracing::error;
 mod db;
 mod intent_scheduler;
 pub mod order_manager;
+mod redis;
 mod settings;
 mod trade_sender;
 pub mod types;
@@ -43,6 +44,7 @@ pub async fn run(settings: Settings) -> Result<()> {
     embedded::migrations::runner()
         .run_async(&mut client)
         .await?;
+    let redis = redis::Redis::new(settings.redis)?;
     let client = Arc::new(client);
     let order_manager = OrderManager::new(
         consumer,
@@ -50,6 +52,7 @@ pub async fn run(settings: Settings) -> Result<()> {
         scheduled_intents_rx1,
         trade_sender_handle,
         client.clone(),
+        redis,
     );
     tokio::join!(
         webserver::run(settings.webserver.port, client),
