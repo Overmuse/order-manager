@@ -58,6 +58,7 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         std::env::set_var("DATABASE__NAME", database_name);
         std::env::set_var("DATABASE__URL", database_address);
+        std::env::set_var("REDIS__URL", "redis://localhost:6379");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
         std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
         std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents");

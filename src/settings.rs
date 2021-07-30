@@ -9,6 +9,11 @@ pub struct Database {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RedisSettings {
+    pub url: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct WebServerSettings {
     pub port: u16,
 }
@@ -17,6 +22,7 @@ pub struct WebServerSettings {
 pub struct Settings {
     pub database: Database,
     pub kafka: KafkaSettings,
+    pub redis: RedisSettings,
     pub webserver: WebServerSettings,
 }
 

@@ -69,11 +69,11 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     let mut remaining_basis = lot.shares * lot.price;
     let mut out = Vec::new();
     for claim in claims {
+        if claim.amount.is_zero() {
+            continue;
+        }
         let (basis, shares) = match claim.amount {
             Amount::Dollars(dollars) => {
-                if dollars.is_zero() {
-                    continue;
-                }
                 if dollars.signum() != remaining_basis.signum() {
                     // Only allocate buys to buys and sells to sells
                     continue;
@@ -85,9 +85,6 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 (allocated_dollars, allocated_dollars / lot.price)
             }
             Amount::Shares(shares) => {
-                if shares.is_zero() {
-                    continue;
-                }
                 let mut allocated_shares = shares.abs().min(remaining_shares.abs());
                 if shares.is_sign_negative() {
                     allocated_shares.set_sign_negative(true)
