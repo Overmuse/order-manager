@@ -1,30 +1,30 @@
-use alpaca::orders::OrderIntent;
 use anyhow::Result;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{error, info};
+use trading_base::TradeIntent;
 
-struct OrderSender {
+struct TradeSender {
     producer: FutureProducer,
-    receiver: mpsc::Receiver<OrderIntent>,
+    receiver: mpsc::Receiver<TradeIntent>,
 }
 
-impl OrderSender {
-    fn new(producer: FutureProducer, receiver: mpsc::Receiver<OrderIntent>) -> Self {
+impl TradeSender {
+    fn new(producer: FutureProducer, receiver: mpsc::Receiver<TradeIntent>) -> Self {
         Self { producer, receiver }
     }
 
     #[tracing::instrument(skip(self))]
     pub async fn run(&mut self) {
-        info!("Starting OrderSender");
+        info!("Starting TradeSender");
         while let Some(oi) = self.receiver.recv().await {
-            info!("Sending order_intent {:?}", oi);
+            info!("Sending trade_intent {:?}", oi);
             let payload = serde_json::to_string(&oi);
             match payload {
                 Ok(payload) => {
-                    let record = FutureRecord::to("order-intents")
-                        .key(&oi.symbol)
+                    let record = FutureRecord::to("trade-intents")
+                        .key(&oi.ticker)
                         .payload(&payload);
                     let send = self.producer.send(record, Duration::from_secs(0)).await;
                     if let Err((e, m)) = send {
@@ -36,23 +36,23 @@ impl OrderSender {
                 }
             }
         }
-        info!("Ending OrderSender");
+        info!("Ending TradeSender");
     }
 }
 
-pub struct OrderSenderHandle {
-    sender: mpsc::Sender<OrderIntent>,
+pub struct TradeSenderHandle {
+    sender: mpsc::Sender<TradeIntent>,
 }
 
-impl OrderSenderHandle {
+impl TradeSenderHandle {
     pub fn new(producer: FutureProducer) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = OrderSender::new(producer, receiver);
+        let mut actor = TradeSender::new(producer, receiver);
         tokio::spawn(async move { actor.run().await });
         Self { sender }
     }
 
-    pub async fn send(&self, msg: OrderIntent) -> Result<()> {
+    pub async fn send(&self, msg: TradeIntent) -> Result<()> {
         self.sender.send(msg).await?;
         Ok(())
     }

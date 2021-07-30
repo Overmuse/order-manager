@@ -43,11 +43,11 @@ async fn get_claims(db: Db) -> Result<impl Reply, Rejection> {
 }
 
 #[tracing::instrument(skip(db))]
-async fn get_pending_orders(db: Db) -> Result<impl Reply, Rejection> {
-    let pending_orders = db::get_pending_orders(db.as_ref())
+async fn get_pending_trades(db: Db) -> Result<impl Reply, Rejection> {
+    let pending_trades = db::get_pending_trades(db.as_ref())
         .await
         .map_err(|_| reject())?;
-    Ok(json(&pending_orders))
+    Ok(json(&pending_trades))
 }
 
 #[tracing::instrument(skip(db))]
@@ -70,17 +70,17 @@ pub async fn run(port: u16, db: Db) {
         .and(get())
         .and(with_db(db.clone()))
         .and_then(get_claims);
-    let pending_orders = path("pending_orders")
+    let pending_trades = path("pending_trades")
         .and(get())
         .and(with_db(db.clone()))
-        .and_then(get_pending_orders);
+        .and_then(get_pending_trades);
     let routes = get()
         .and(health)
         .or(get_allocations)
         .or(set_allocation_owner)
         .or(lots)
         .or(claims)
-        .or(pending_orders);
+        .or(pending_trades);
     let address = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port);
     serve(routes).run(address).await
 }

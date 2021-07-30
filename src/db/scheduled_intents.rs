@@ -84,7 +84,7 @@ pub async fn save_scheduled_intent<T: GenericClient>(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn delete_scheduled_intent<T: GenericClient>(client: &T, id: &Uuid) -> Result<()> {
+pub async fn delete_scheduled_intent<T: GenericClient>(client: &T, id: Uuid) -> Result<()> {
     trace!(%id, "Deleting scheduled intent");
     client
         .execute("DELETE FROM scheduled_intents WHERE id = $1", &[&id])

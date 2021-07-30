@@ -1,17 +1,17 @@
 use crate::db;
-use crate::types::PendingOrder;
-use crate::OrderSenderHandle;
-use alpaca::{orders::OrderIntent, AlpacaMessage, Side};
+use crate::types::PendingTrade;
+use crate::TradeSenderHandle;
+use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
-use num_traits::ToPrimitive;
 use rdkafka::consumer::StreamConsumer;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{debug, error, info};
 use trading_base::PositionIntent;
+use trading_base::TradeIntent;
 
-mod dependent_orders;
+mod dependent_trades;
 mod input;
 mod intents;
 mod order_updates;
@@ -22,7 +22,7 @@ pub struct OrderManager {
     kafka_consumer: StreamConsumer,
     scheduler_sender: UnboundedSender<PositionIntent>,
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
-    order_sender: OrderSenderHandle,
+    trade_sender: TradeSenderHandle,
     db_client: Arc<Client>,
 }
 
@@ -31,14 +31,14 @@ impl OrderManager {
         kafka_consumer: StreamConsumer,
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
-        order_sender: OrderSenderHandle,
+        trade_sender: TradeSenderHandle,
         db_client: Arc<Client>,
     ) -> Self {
         Self {
             kafka_consumer,
             scheduler_sender,
             scheduler_receiver,
-            order_sender,
+            trade_sender,
             db_client,
         }
     }
@@ -92,26 +92,18 @@ impl OrderManager {
         Ok(())
     }
 
-    async fn send_order(&self, order: OrderIntent) -> Result<()> {
-        let qty = match order.side {
-            Side::Buy => order.qty.to_i32().unwrap(),
-            Side::Sell => -(order.qty.to_i32().unwrap()),
-        };
-        db::save_pending_order(
+    async fn send_trade(&self, trade: TradeIntent) -> Result<()> {
+        db::save_pending_trade(
             self.db_client.as_ref(),
-            &PendingOrder::new(
-                order.client_order_id.clone().unwrap(),
-                order.symbol.clone(),
-                qty,
-            ),
+            PendingTrade::new(trade.id, trade.ticker.clone(), trade.qty as i32),
         )
         .await
-        .context("Failed to save pending order")?;
+        .context("Failed to save pending trade")?;
 
-        self.order_sender
-            .send(order)
+        self.trade_sender
+            .send(trade)
             .await
-            .context("Failed to send order")?;
+            .context("Failed to send trade")?;
         Ok(())
     }
 }

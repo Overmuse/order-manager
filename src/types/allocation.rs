@@ -129,7 +129,7 @@ mod test {
     #[test]
     fn test_split_lot_with_remainder() {
         let lot = Lot::new(
-            "A".into(),
+            Uuid::new_v4(),
             "AAPL".into(),
             Utc::now(),
             Decimal::new(100, 0),

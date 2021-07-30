@@ -28,7 +28,7 @@ impl OrderManager {
             scheduled_intent = self.scheduler_receiver.recv() => {
                 debug!("Message received from scheduler");
                 let intent = scheduled_intent.ok_or_else(|| anyhow!("Channel closed"))?;
-                db::delete_scheduled_intent(self.db_client.as_ref(), &intent.id).await?;
+                db::delete_scheduled_intent(self.db_client.as_ref(), intent.id).await?;
                 Ok(Input::PositionIntent(intent))
             }
         }
