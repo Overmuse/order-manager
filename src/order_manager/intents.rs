@@ -63,9 +63,7 @@ impl OrderManager {
     async fn evaluate_intent(&self, intent: PositionIntent) -> Result<()> {
         trace!("Evaluating intent");
         match &intent.identifier {
-            Identifier::Ticker(ticker) => {
-                self.evaluate_single_ticker_intent(&intent, &ticker).await
-            }
+            Identifier::Ticker(ticker) => self.evaluate_single_ticker_intent(&intent, ticker).await,
             Identifier::All => self.evaluate_multi_ticker_intent(intent).await,
         }
     }
