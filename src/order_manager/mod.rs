@@ -1,6 +1,7 @@
 use crate::db;
+use crate::order_manager::input::State;
 use crate::redis::Redis;
-use crate::types::PendingTrade;
+use crate::types::{Owner, PendingTrade};
 use crate::TradeSenderHandle;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
@@ -91,6 +92,16 @@ impl OrderManager {
                 .await
                 .context("Failed to handle OrderEvent")?,
             Ok(Input::AlpacaMessage(_)) => unreachable!(),
+            Ok(Input::Time(State::Open { next_close })) => {
+                if next_close < 300 {
+                    let positions =
+                        db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
+                    for position in positions {
+                        self.close_position(position).await?;
+                    }
+                }
+            }
+            Ok(Input::Time(State::Closed { .. })) => {}
             Err(e) => return Err(e),
         };
         Ok(())

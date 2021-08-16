@@ -183,9 +183,9 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, position), fields(position.ticker))]
-    async fn close_position(&self, position: Position) -> Result<()> {
+    pub async fn close_position(&self, position: Position) -> Result<()> {
+        let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None)?;
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
-            let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None)?;
             let claim = Claim::new(
                 strategy,
                 sub_strategy,
@@ -195,10 +195,8 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
-            self.send_trade(trade_intent).await
-        } else {
-            Err(anyhow!("Can't close position of house account"))
-        }
+        };
+        self.send_trade(trade_intent).await
     }
 
     #[tracing::instrument(skip(self, intent, ticker, position))]
