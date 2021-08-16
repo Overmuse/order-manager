@@ -3,9 +3,16 @@ use crate::db;
 use alpaca::AlpacaMessage;
 use anyhow::{anyhow, Result};
 use rdkafka::Message;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 use trading_base::PositionIntent;
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum State {
+    Open { next_close: usize },
+    Closed { next_open: usize },
+}
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -13,6 +20,7 @@ use trading_base::PositionIntent;
 pub enum Input {
     PositionIntent(PositionIntent),
     AlpacaMessage(AlpacaMessage),
+    Time(State),
 }
 
 impl OrderManager {
