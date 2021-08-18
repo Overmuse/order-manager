@@ -87,21 +87,23 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
-            self.generate_trades(intent, ticker, claim).await?;
+            self.generate_trades(ticker, &claim.amount, intent.limit_price, intent.stop_price)
+                .await?;
         }
         Ok(())
     }
 
     #[tracing::instrument(skip(self))]
-    async fn generate_trades(
+    pub async fn generate_trades(
         &self,
-        intent: &PositionIntent,
         ticker: &str,
-        claim: Claim,
+        amount: &Amount,
+        limit_price: Option<Decimal>,
+        stop_price: Option<Decimal>,
     ) -> Result<()> {
         let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
-        let diff_shares = match claim.amount {
-            Amount::Shares(shares) => shares,
+        let diff_shares = match amount {
+            Amount::Shares(shares) => *shares,
             Amount::Dollars(dollars) => {
                 let price = self
                     .redis
@@ -109,7 +111,7 @@ impl OrderManager {
                     .await?
                     .map(Decimal::from_f64)
                     .flatten()
-                    .or(intent.limit_price);
+                    .or(limit_price);
                 match price {
                     Some(price) => dollars / price,
                     None => {
@@ -128,8 +130,14 @@ impl OrderManager {
                 .into();
         let total_shares = positions.iter().map(|pos| pos.shares).sum();
 
-        let (sent, maybe_saved) =
-            self.make_trades(intent, ticker, diff_shares, total_shares, pending_shares)?;
+        let (sent, maybe_saved) = self.make_trades(
+            ticker,
+            diff_shares,
+            total_shares,
+            pending_shares,
+            limit_price,
+            stop_price,
+        )?;
         if let Some(saved) = maybe_saved {
             debug!("Saving dependent trade");
             db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
@@ -261,33 +269,41 @@ impl OrderManager {
         Ok(Some(claim))
     }
 
-    #[tracing::instrument(skip(self, intent, ticker, diff_shares, total_shares, pending_shares))]
+    #[tracing::instrument(skip(
+        self,
+        ticker,
+        diff_shares,
+        total_shares,
+        pending_shares,
+        limit_price,
+        stop_price
+    ))]
     fn make_trades(
         &self,
-        intent: &PositionIntent,
         ticker: &str,
         diff_shares: Decimal,
         total_shares: Decimal,
         pending_shares: Decimal,
+        limit_price: Option<Decimal>,
+        stop_price: Option<Decimal>,
     ) -> Result<(TradeIntent, Option<TradeIntent>)> {
         let signum_product = (total_shares + pending_shares).signum()
             * (diff_shares + total_shares + pending_shares).signum();
         if !signum_product.is_sign_negative() {
-            let sent =
-                make_trade_intent(ticker, diff_shares, intent.limit_price, intent.stop_price)?;
+            let sent = make_trade_intent(ticker, diff_shares, limit_price, stop_price)?;
             Ok((sent, None))
         } else {
             let sent = make_trade_intent(
                 ticker,
                 -(total_shares + pending_shares),
-                intent.limit_price,
-                intent.stop_price,
+                limit_price,
+                stop_price,
             )?;
             let saved = make_trade_intent(
                 ticker,
                 diff_shares + total_shares + pending_shares,
-                intent.limit_price,
-                intent.stop_price,
+                limit_price,
+                stop_price,
             )?;
             Ok((sent, Some(saved)))
         }

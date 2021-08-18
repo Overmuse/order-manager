@@ -61,7 +61,10 @@ async fn main() -> Result<()> {
         std::env::set_var("REDIS__URL", "redis://localhost:6379");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
         std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
-        std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents");
+        std::env::set_var(
+            "KAFKA__INPUT_TOPICS",
+            "overmuse-trades,position-intents,time",
+        );
         std::env::set_var("KAFKA__BOOTSTRAP_SERVERS", "localhost:9094");
         std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
         std::env::set_var("KAFKA__ACKS", "0");
@@ -75,6 +78,17 @@ async fn main() -> Result<()> {
     //
     // TODO: Replace this sleep with a liveness check
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+    // Send initial time record in order to clean up pending trades
+    let record = FutureRecord::to("time")
+        .key("")
+        .payload(r#"{"state":"open","next_close":710}"#);
+    producer
+        .send_result(record)
+        .unwrap()
+        .await
+        .unwrap()
+        .unwrap();
 
     // TEST 1: An initial position intent leads to an trade intent for the full size of the
     // position intent.
@@ -252,7 +266,7 @@ async fn main() -> Result<()> {
     info!("Test 8");
     send_position(
         &producer,
-        &PositionIntent::builder("S2", "AAPL", Amount::Shares(Decimal::new(100, 0)))
+        &PositionIntent::builder("S2", "AAPL", Amount::Shares(Decimal::new(300, 0)))
             .before(Utc::now() - Duration::days(1))
             .build()
             .unwrap(),
@@ -266,7 +280,7 @@ async fn main() -> Result<()> {
     send_position(
         &producer,
         &PositionIntent::builder("S2", "AAPL", Amount::Shares(Decimal::new(100, 0)))
-            .after(Utc::now() + Duration::seconds(1))
+            .after(Utc::now() + Duration::microseconds(1))
             .build()
             .unwrap(),
     )
@@ -281,8 +295,36 @@ async fn main() -> Result<()> {
     );
     send_order_event(&producer, &fill_message).await.unwrap();
 
-    // Test 10: Can send intent to close all positions
+    // Test 10: Reconciles positions when receiving time update
     info!("Test 10");
+    send_position(
+        &producer,
+        &PositionIntent::builder("S2", "AAPL", Amount::Shares(Decimal::new(200, 0)))
+            .build()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let _trade_indent = receive_ti(&consumer).await.unwrap();
+    let record = FutureRecord::to("time")
+        .key("")
+        .payload(r#"{"state":"open","next_close":710}"#);
+    producer
+        .send_result(record)
+        .unwrap()
+        .await
+        .unwrap()
+        .unwrap();
+    let trade_indent = receive_ti(&consumer).await.unwrap();
+    let new_id = trade_indent.id;
+    let fill_message = format!(
+        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"200","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"100","filled_qty":"100","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"buy","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+        new_id
+    );
+    send_order_event(&producer, &fill_message).await.unwrap();
+
+    // Test 11: Can send intent to close all positions
+    info!("Test 11");
     send_position(
         &producer,
         &PositionIntent::builder("S2", Identifier::All, Amount::Zero)
@@ -292,10 +334,10 @@ async fn main() -> Result<()> {
     .await
     .unwrap();
     let trade_indent = receive_ti(&consumer).await.unwrap();
-    assert_eq!(trade_indent.qty, -100);
+    assert_eq!(trade_indent.qty, -200);
     let new_id = trade_indent.id;
     let fill_message = format!(
-        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"0","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"100","filled_qty":"100","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"sell","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+        r#"{{"stream":"trade_updates","data":{{"event":"fill","position_qty":"0","price":"100.0","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:39:00.0000000Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"AAPL","asset_class":"us_equity","notional":null,"qty":"200","filled_qty":"200","filled_avg_price":"100.0","order_class":"","order_type":"market","type":"market","side":"sell","time_in_force":"day","limit_price":null,"stop_price":null,"status":"filled","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
         new_id
     );
     send_order_event(&producer, &fill_message).await.unwrap();

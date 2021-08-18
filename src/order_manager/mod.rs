@@ -5,13 +5,14 @@ use crate::types::{Owner, PendingTrade};
 use crate::TradeSenderHandle;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
+use chrono::{Duration, Utc};
 use rdkafka::consumer::StreamConsumer;
+use rust_decimal::Decimal;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{debug, error, info};
-use trading_base::PositionIntent;
-use trading_base::TradeIntent;
+use trading_base::{Amount, PositionIntent, TradeIntent};
 
 mod dependent_trades;
 mod input;
@@ -92,18 +93,62 @@ impl OrderManager {
                 .await
                 .context("Failed to handle OrderEvent")?,
             Ok(Input::AlpacaMessage(_)) => unreachable!(),
-            Ok(Input::Time(State::Open { next_close })) => {
-                if next_close < 300 {
-                    let positions =
-                        db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
-                    for position in positions {
-                        self.close_position(position).await?;
-                    }
-                }
+            Ok(Input::Time(State::Open { .. })) => {
+                debug!("Handling time update");
+                self.reconcile().await.context("Failed to reconcile")?;
             }
             Ok(Input::Time(State::Closed { .. })) => {}
             Err(e) => return Err(e),
         };
+        Ok(())
+    }
+
+    async fn reconcile(&self) -> Result<()> {
+        self.cancel_old_pending_trades().await?;
+        self.reconcile_claims().await?;
+        self.reconcile_house_positions().await
+    }
+
+    async fn cancel_old_pending_trades(&self) -> Result<()> {
+        let pending_trades = db::get_pending_trades(self.db_client.as_ref()).await?;
+        for trade in pending_trades {
+            if (Utc::now() - trade.datetime) > Duration::seconds(10) {
+                db::delete_pending_trade_by_id(self.db_client.as_ref(), trade.id).await?
+            }
+        }
+        Ok(())
+    }
+
+    async fn reconcile_claims(&self) -> Result<()> {
+        let claims = db::get_claims(self.db_client.as_ref()).await?;
+        let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
+        for claim in claims {
+            // TODO: Account for pending trades
+            self.generate_trades(&claim.ticker, &claim.amount, None, None)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn reconcile_house_positions(&self) -> Result<()> {
+        let house_positions =
+            db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
+        let house_positions = house_positions
+            .iter()
+            .filter(|pos| pos.shares != Decimal::ZERO);
+        for position in house_positions {
+            if position.shares.abs() > Decimal::ONE {
+                let mut shares_to_liquidate = position.shares.abs() - Decimal::ONE;
+                shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
+                self.generate_trades(
+                    &position.ticker,
+                    &Amount::Shares(-shares_to_liquidate),
+                    None,
+                    None,
+                )
+                .await?
+            }
+        }
         Ok(())
     }
 

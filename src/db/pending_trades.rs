@@ -66,7 +66,7 @@ pub async fn save_pending_trade<T: GenericClient>(
     pending_trade: PendingTrade,
 ) -> Result<(), Error> {
     trace!(id = %pending_trade.id, "Saving pending trade");
-    client.execute("INSERT INTO pending_trades (id, ticker, quantity, pending_quantity) VALUES ($1, $2, $3, $4)", &[&pending_trade.id, &pending_trade.ticker, &pending_trade.qty, &pending_trade.pending_qty]).await?;
+    client.execute("INSERT INTO pending_trades (id, ticker, quantity, pending_quantity, datetime) VALUES ($1, $2, $3, $4, $5)", &[&pending_trade.id, &pending_trade.ticker, &pending_trade.qty, &pending_trade.pending_qty, &pending_trade.datetime]).await?;
     Ok(())
 }
 

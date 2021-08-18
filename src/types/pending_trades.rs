@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::convert::TryFrom;
 use tokio_postgres::Row;
@@ -9,6 +10,7 @@ pub struct PendingTrade {
     pub ticker: String,
     pub qty: i32,
     pub pending_qty: i32,
+    pub datetime: DateTime<Utc>,
 }
 
 impl PendingTrade {
@@ -20,6 +22,7 @@ impl PendingTrade {
             ticker,
             qty,
             pending_qty: qty,
+            datetime: Utc::now(),
         }
     }
 }
@@ -30,8 +33,9 @@ impl TryFrom<Row> for PendingTrade {
         Ok(Self {
             id: row.try_get("id")?,
             ticker: row.try_get("ticker")?,
-            qty: row.try_get("qty")?,
-            pending_qty: row.try_get("pending_qty")?,
+            qty: row.try_get("quantity")?,
+            pending_qty: row.try_get("pending_quantity")?,
+            datetime: row.try_get("datetime")?,
         })
     }
 }
