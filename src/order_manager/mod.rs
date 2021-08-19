@@ -7,11 +7,11 @@ use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use rdkafka::consumer::StreamConsumer;
-use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use trading_base::{Amount, PositionIntent, TradeIntent};
 
 mod dependent_trades;
@@ -115,6 +115,7 @@ impl OrderManager {
             if (Utc::now() - trade.datetime) > Duration::seconds(10)
                 && trade.status == Status::Unreported
             {
+                warn!(id = %trade.id, "Deleting unreported trade");
                 db::delete_pending_trade_by_id(self.db_client.as_ref(), trade.id).await?
             }
         }
@@ -145,7 +146,7 @@ impl OrderManager {
             .iter()
             .filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
-            if position.shares.abs() > Decimal::ONE {
+            if position.shares.abs() > Decimal::from_f64(0.99).unwrap() {
                 let mut shares_to_liquidate = position.shares.abs() - Decimal::ONE;
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
                 self.generate_trades(
