@@ -1,7 +1,7 @@
 use crate::db;
 use crate::order_manager::input::State;
 use crate::redis::Redis;
-use crate::types::{Owner, PendingTrade};
+use crate::types::{Owner, PendingTrade, Status};
 use crate::TradeSenderHandle;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
@@ -112,7 +112,9 @@ impl OrderManager {
     async fn cancel_old_pending_trades(&self) -> Result<()> {
         let pending_trades = db::get_pending_trades(self.db_client.as_ref()).await?;
         for trade in pending_trades {
-            if (Utc::now() - trade.datetime) > Duration::seconds(10) {
+            if (Utc::now() - trade.datetime) > Duration::seconds(10)
+                && trade.status == Status::Unreported
+            {
                 db::delete_pending_trade_by_id(self.db_client.as_ref(), trade.id).await?
             }
         }
@@ -123,9 +125,15 @@ impl OrderManager {
         let claims = db::get_claims(self.db_client.as_ref()).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
         for claim in claims {
-            // TODO: Account for pending trades
-            self.generate_trades(&claim.ticker, &claim.amount, None, None)
-                .await?;
+            let pending_trade_amount =
+                db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker)
+                    .await?
+                    .unwrap_or(0);
+
+            if pending_trade_amount == 0 {
+                self.generate_trades(&claim.ticker, &claim.amount, None, None)
+                    .await?;
+            }
         }
         Ok(())
     }

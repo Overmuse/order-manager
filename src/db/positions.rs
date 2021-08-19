@@ -39,7 +39,7 @@ pub async fn get_positions_by_ticker<T: GenericClient>(
 }
 
 #[tracing::instrument(skip(client, owner, ticker))]
-pub async fn get_positions_by_owner_and_ticker<T: GenericClient>(
+pub async fn get_position_by_owner_and_ticker<T: GenericClient>(
     client: &T,
     owner: &Owner,
     ticker: &str,

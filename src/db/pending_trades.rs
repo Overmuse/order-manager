@@ -1,4 +1,5 @@
-use crate::types::PendingTrade;
+use crate::types::{PendingTrade, Status};
+use anyhow::Result;
 use std::convert::TryInto;
 use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
@@ -31,6 +32,20 @@ pub async fn get_pending_trades<T: GenericClient>(client: &T) -> Result<Vec<Pend
         .collect()
 }
 
+#[tracing::instrument(skip(client))]
+pub async fn get_pending_trades_by_ticker<T: GenericClient>(
+    client: &T,
+    ticker: &str,
+) -> Result<Vec<PendingTrade>, Error> {
+    trace!("Getting pending trades for ticker {}", ticker);
+    client
+        .query("SELECT * FROM pending_trades WHERE ticker = $1", &[&ticker])
+        .await?
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect()
+}
+
 #[tracing::instrument(skip(client, id))]
 pub async fn get_pending_trade_by_id<T: GenericClient>(
     client: &T,
@@ -49,8 +64,8 @@ pub async fn update_pending_trade_qty<T: GenericClient>(
     client: &T,
     id: Uuid,
     qty: i32,
-) -> Result<(), Error> {
-    trace!(%id, qty, "Updating pending trade");
+) -> Result<()> {
+    trace!(%id, qty, "Updating pending trade qty");
     client
         .execute(
             "UPDATE pending_trades SET pending_qty = $1 WHERE id = $2",
@@ -60,21 +75,44 @@ pub async fn update_pending_trade_qty<T: GenericClient>(
     Ok(())
 }
 
+#[tracing::instrument(skip(client, id, status))]
+pub async fn update_pending_trade_status<T: GenericClient>(
+    client: &T,
+    id: Uuid,
+    status: Status,
+) -> Result<()> {
+    trace!(%id, ?status, "Updating pending trade status");
+    client
+        .execute(
+            "UPDATE pending_trades SET status = $1 WHERE id = $2",
+            &[&serde_plain::to_string(&status)?, &id],
+        )
+        .await?;
+    Ok(())
+}
+
 #[tracing::instrument(skip(client, pending_trade))]
 pub async fn save_pending_trade<T: GenericClient>(
     client: &T,
     pending_trade: PendingTrade,
-) -> Result<(), Error> {
+) -> Result<()> {
     trace!(id = %pending_trade.id, "Saving pending trade");
-    client.execute("INSERT INTO pending_trades (id, ticker, quantity, pending_quantity, datetime) VALUES ($1, $2, $3, $4, $5)", &[&pending_trade.id, &pending_trade.ticker, &pending_trade.qty, &pending_trade.pending_qty, &pending_trade.datetime]).await?;
+    client.execute(
+        "INSERT INTO pending_trades (id, ticker, quantity, pending_quantity, datetime, status) VALUES ($1, $2, $3, $4, $5, $6)", 
+        &[
+            &pending_trade.id,
+            &pending_trade.ticker,
+            &pending_trade.qty,
+            &pending_trade.pending_qty,
+            &pending_trade.datetime,
+            &serde_plain::to_string(&pending_trade.status)?
+        ]
+    ).await?;
     Ok(())
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn delete_pending_trade_by_id<T: GenericClient>(
-    client: &T,
-    id: Uuid,
-) -> Result<(), Error> {
+pub async fn delete_pending_trade_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<()> {
     trace!(%id, "Deleting pending trade");
     client
         .execute("DELETE FROM pending_trades WHERE id = $1", &[&id])
