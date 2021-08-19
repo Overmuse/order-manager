@@ -306,6 +306,8 @@ async fn main() -> Result<()> {
     .await
     .unwrap();
     let _trade_indent = receive_ti(&consumer).await.unwrap();
+    info!("SLEEPING 10 SECONDS");
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     let record = FutureRecord::to("time")
         .key("")
         .payload(r#"{"state":"open","next_close":710}"#);

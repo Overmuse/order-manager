@@ -1,6 +1,6 @@
 use super::OrderManager;
 use crate::db;
-use crate::types::{split_lot, Allocation, Lot};
+use crate::types::{split_lot, Allocation, Lot, Status};
 use alpaca::{Event, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -23,7 +23,12 @@ impl OrderManager {
         };
         debug!(status = ?event.event, "Order status update");
         match event.event {
+            Event::New => {
+                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Accepted)
+                    .await?;
+            }
             Event::Canceled { .. } | Event::Expired { .. } | Event::Rejected { .. } => {
+                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Dead).await?;
                 db::delete_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to delete pending trade")?;
@@ -32,6 +37,8 @@ impl OrderManager {
                 price, timestamp, ..
             } => {
                 debug!("Order filled");
+                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Filled)
+                    .await?;
                 let new_lot = self
                     .make_lot(id, ticker, timestamp, price, qty)
                     .await
@@ -56,6 +63,12 @@ impl OrderManager {
             Event::PartialFill {
                 price, timestamp, ..
             } => {
+                db::update_pending_trade_status(
+                    self.db_client.as_ref(),
+                    id,
+                    Status::PartiallyFilled,
+                )
+                .await?;
                 let pending_trade = db::get_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to get pending trade")?
