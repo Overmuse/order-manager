@@ -123,9 +123,15 @@ impl OrderManager {
         let claims = db::get_claims(self.db_client.as_ref()).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
         for claim in claims {
-            // TODO: Account for pending trades
-            self.generate_trades(&claim.ticker, &claim.amount, None, None)
-                .await?;
+            let pending_amount =
+                db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker)
+                    .await?
+                    .unwrap_or(0);
+            // TODO: Deal with the case of non-zero pending shares
+            if pending_amount == 0 {
+                self.generate_trades(&claim.ticker, &claim.amount, None, None)
+                    .await?;
+            }
         }
         Ok(())
     }

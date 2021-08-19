@@ -74,14 +74,18 @@ impl OrderManager {
         intent: &PositionIntent,
         ticker: &str,
     ) -> Result<()> {
-        let position = db::get_positions_by_owner_and_ticker(
+        let maybe_position = db::get_position_by_owner_and_ticker(
             self.db_client.as_ref(),
             &Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
             ticker,
         )
         .await
         .context("Failed to get positions")?;
-        let maybe_claim = self.make_claim(intent, ticker, position).await?;
+        let strategy_shares = maybe_position
+            .as_ref()
+            .map(|x| x.shares)
+            .unwrap_or(Decimal::ZERO);
+        let maybe_claim = self.make_claim(intent, ticker, strategy_shares).await?;
         if let Some(mut claim) = maybe_claim {
             self.net_claim(&mut claim).await?;
             db::save_claim(self.db_client.as_ref(), &claim)
@@ -207,14 +211,13 @@ impl OrderManager {
         self.send_trade(trade_intent).await
     }
 
-    #[tracing::instrument(skip(self, intent, ticker, position))]
+    #[tracing::instrument(skip(self, intent, ticker, strategy_shares))]
     async fn make_claim(
         &self,
         intent: &PositionIntent,
         ticker: &str,
-        position: Option<Position>,
+        strategy_shares: Decimal,
     ) -> Result<Option<Claim>> {
-        let strategy_shares = position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO);
         match intent.update_policy {
             UpdatePolicy::Retain => {
                 debug!("UpdatePolicy::Retain: No trading needed");
@@ -309,7 +312,15 @@ impl OrderManager {
         }
     }
 
-    async fn net_claim(&self, _claim: &mut Claim) -> Result<()> {
+    async fn net_claim(&self, claim: &mut Claim) -> Result<()> {
+        let _maybe_house_position = db::get_position_by_owner_and_ticker(
+            self.db_client.as_ref(),
+            &Owner::House,
+            &claim.ticker,
+        )
+        .await?;
+        // TODO: Actually net the claim
+
         Ok(())
     }
 }
