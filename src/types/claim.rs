@@ -13,18 +13,26 @@ pub struct Claim {
     pub sub_strategy: Option<String>,
     pub ticker: String,
     pub amount: Amount,
+    pub limit_price: Option<Decimal>,
 }
 
 impl Claim {
-    #[tracing::instrument(skip(strategy, sub_strategy, ticker, amount))]
-    pub fn new(strategy: String, sub_strategy: Option<String>, ticker: String, amount: Amount) -> Self {
-        trace!(%strategy, ?sub_strategy, %ticker, ?amount, "New Claim");
+    #[tracing::instrument(skip(strategy, sub_strategy, ticker, amount, limit_price))]
+    pub fn new(
+        strategy: String,
+        sub_strategy: Option<String>,
+        ticker: String,
+        amount: Amount,
+        limit_price: Option<Decimal>,
+    ) -> Self {
+        trace!(%strategy, ?sub_strategy, %ticker, ?amount, ?limit_price, "New Claim");
         Self {
             id: Uuid::new_v4(),
             strategy,
             sub_strategy,
             ticker,
             amount,
+            limit_price,
         }
     }
 }
@@ -38,6 +46,7 @@ impl TryFrom<Row> for Claim {
             sub_strategy: row.try_get("sub_strategy")?,
             ticker: row.try_get("ticker")?,
             amount: unite_amount_spec(row.try_get("amount")?, row.try_get("unit")?),
+            limit_price: row.try_get("limit_price")?,
         })
     }
 }
