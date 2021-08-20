@@ -1,5 +1,4 @@
 use super::{Claim, Lot, Owner};
-use num_traits::Signed;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -63,21 +62,42 @@ impl TryFrom<Row> for Allocation {
     }
 }
 
+fn should_allocate(lot: &Lot, claim: &Claim) -> bool {
+    if claim.amount.is_zero() {
+        return false;
+    }
+    if claim.ticker != lot.ticker {
+        return false;
+    }
+    if claim.amount.is_sign_positive() && lot.shares.is_sign_negative() {
+        return false;
+    }
+    if claim.amount.is_sign_negative() && lot.shares.is_sign_positive() {
+        return false;
+    }
+
+    if let Some(limit_price) = claim.limit_price {
+        if (lot.shares.is_sign_positive() && lot.price > limit_price)
+            || (lot.shares.is_sign_negative() && lot.price < limit_price)
+        {
+            return false;
+        }
+    }
+    true
+}
+
 #[tracing::instrument(skip(claims, lot))]
 pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
     let mut remaining_shares = lot.shares;
     let mut remaining_basis = lot.shares * lot.price;
     let mut out = Vec::new();
     for claim in claims {
-        if claim.amount.is_zero() {
+        if !should_allocate(lot, claim) {
             continue;
         }
+
         let (basis, shares) = match claim.amount {
             Amount::Dollars(dollars) => {
-                if dollars.signum() != remaining_basis.signum() {
-                    // Only allocate buys to buys and sells to sells
-                    continue;
-                }
                 let mut allocated_dollars = dollars.abs().min(remaining_basis.abs());
                 if dollars.is_sign_negative() {
                     allocated_dollars.set_sign_negative(true)
@@ -124,6 +144,43 @@ mod test {
     use chrono::Utc;
 
     #[test]
+    fn test_should_allocate() {
+        let lot = Lot::new(
+            Uuid::new_v4(),
+            "AAPL".into(),
+            Utc::now(),
+            Decimal::new(100, 0),
+            Decimal::new(10, 0),
+        );
+
+        let zero_claim1 = Claim::new("A".into(), None, "AAPL".into(), Amount::Shares(Decimal::ZERO), None);
+        let zero_claim2 = Claim::new("A".into(), None, "AAPL".into(), Amount::Dollars(Decimal::ZERO), None);
+        let zero_claim3 = Claim::new("A".into(), None, "AAPL".into(), Amount::Zero, None);
+
+        assert!(!should_allocate(&lot, &zero_claim1));
+        assert!(!should_allocate(&lot, &zero_claim2));
+        assert!(!should_allocate(&lot, &zero_claim3));
+
+        let limit_claim = Claim::new(
+            "A".into(),
+            None,
+            "AAPL".into(),
+            Amount::Shares(Decimal::ONE),
+            Some(Decimal::TEN),
+        );
+        assert!(!should_allocate(&lot, &limit_claim));
+
+        let wrong_sign_claim = Claim::new("A".into(), None, "AAPL".into(), Amount::Shares(-Decimal::ONE), None);
+        assert!(!should_allocate(&lot, &wrong_sign_claim));
+
+        let wrong_ticker_claim = Claim::new("A".into(), None, "AAP".into(), Amount::Shares(Decimal::ONE), None);
+        assert!(!should_allocate(&lot, &wrong_ticker_claim));
+
+        let okay_claim = Claim::new("A".into(), None, "AAPL".into(), Amount::Shares(Decimal::ONE), None);
+        assert!(should_allocate(&lot, &okay_claim));
+    }
+
+    #[test]
     fn test_split_lot_with_remainder() {
         let lot = Lot::new(
             Uuid::new_v4(),
@@ -133,13 +190,26 @@ mod test {
             Decimal::new(10, 0),
         );
         let claims = vec![
-            Claim::new("A".into(), None, "AAPL".into(), Amount::Dollars(Decimal::new(-400, 0))),
-            Claim::new("B".into(), None, "AAPL".into(), Amount::Dollars(Decimal::new(400, 0))),
+            Claim::new(
+                "A".into(),
+                None,
+                "AAPL".into(),
+                Amount::Dollars(Decimal::new(-400, 0)),
+                None,
+            ),
+            Claim::new(
+                "B".into(),
+                None,
+                "AAPL".into(),
+                Amount::Dollars(Decimal::new(400, 0)),
+                None,
+            ),
             Claim::new(
                 "C".into(),
                 Some("B2".into()),
                 "AAPL".into(),
                 Amount::Shares(Decimal::new(25, 1)),
+                None,
             ),
         ];
         let allocations = split_lot(&claims, &lot);

@@ -62,7 +62,7 @@ pub async fn save_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result<(
     let (amount, unit) = split_amount_spec(&claim.amount);
     client
         .execute(
-            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit) VALUES ($1, $2, $3, $4, $5, $6);",
+            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit, limit_price) VALUES ($1, $2, $3, $4, $5, $6, $7);",
             &[
                 &claim.id,
                 &claim.strategy,
@@ -70,6 +70,7 @@ pub async fn save_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result<(
                 &claim.ticker,
                 &amount,
                 &unit,
+                &claim.limit_price
             ],
         )
         .await?;
