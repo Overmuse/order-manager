@@ -16,9 +16,7 @@ fn with_db(db: Db) -> impl Filter<Extract = (Db,), Error = Infallible> + Clone {
 
 #[tracing::instrument(skip(db))]
 async fn get_allocations(db: Db) -> Result<impl Reply, Rejection> {
-    let allocations = db::get_allocations(db.as_ref())
-        .await
-        .map_err(|_| reject())?;
+    let allocations = db::get_allocations(db.as_ref()).await.map_err(|_| reject())?;
     Ok(json(&allocations))
 }
 
@@ -44,9 +42,7 @@ async fn get_claims(db: Db) -> Result<impl Reply, Rejection> {
 
 #[tracing::instrument(skip(db))]
 async fn get_pending_trades(db: Db) -> Result<impl Reply, Rejection> {
-    let pending_trades = db::get_pending_trades(db.as_ref())
-        .await
-        .map_err(|_| reject())?;
+    let pending_trades = db::get_pending_trades(db.as_ref()).await.map_err(|_| reject())?;
     Ok(json(&pending_trades))
 }
 
@@ -62,14 +58,8 @@ pub async fn run(port: u16, db: Db) {
         .and(body::json())
         .and(with_db(db.clone()))
         .and_then(set_allocation_owner);
-    let lots = path("lots")
-        .and(get())
-        .and(with_db(db.clone()))
-        .and_then(get_lots);
-    let claims = path("claims")
-        .and(get())
-        .and(with_db(db.clone()))
-        .and_then(get_claims);
+    let lots = path("lots").and(get()).and(with_db(db.clone())).and_then(get_lots);
+    let claims = path("claims").and(get()).and(with_db(db.clone())).and_then(get_claims);
     let pending_trades = path("pending_trades")
         .and(get())
         .and(with_db(db.clone()))

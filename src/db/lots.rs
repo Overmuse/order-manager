@@ -16,10 +16,7 @@ pub async fn get_lots<T: GenericClient>(client: &T) -> Result<Vec<Lot>, Error> {
 }
 
 #[tracing::instrument(skip(client, order_id))]
-pub async fn get_lots_by_order_id<T: GenericClient>(
-    client: &T,
-    order_id: Uuid,
-) -> Result<Vec<Lot>, Error> {
+pub async fn get_lots_by_order_id<T: GenericClient>(client: &T, order_id: Uuid) -> Result<Vec<Lot>, Error> {
     trace!(%order_id, "Getting lots");
     client
         .query("SELECT * FROM lots WHERE order_id = $1", &[&order_id])
@@ -41,14 +38,18 @@ pub async fn get_lots_by_order_id<T: GenericClient>(
 #[tracing::instrument(skip(client, lot))]
 pub async fn save_lot<T: GenericClient>(client: &T, lot: &Lot) -> Result<(), Error> {
     trace!(id = %lot.id, "Saving lot");
-    client.execute("INSERT INTO lots (id, order_id, ticker, fill_time, price, shares) VALUES ($1, $2, $3, $4, $5, $6);", &[
-            &lot.id,
-            &lot.order_id,
-            &lot.ticker,
-            &lot.fill_time,
-            &lot.price,
-            &lot.shares,
-        ])
-            .await?;
+    client
+        .execute(
+            "INSERT INTO lots (id, order_id, ticker, fill_time, price, shares) VALUES ($1, $2, $3, $4, $5, $6);",
+            &[
+                &lot.id,
+                &lot.order_id,
+                &lot.ticker,
+                &lot.fill_time,
+                &lot.price,
+                &lot.shares,
+            ],
+        )
+        .await?;
     Ok(())
 }

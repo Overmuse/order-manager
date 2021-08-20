@@ -133,18 +133,8 @@ mod test {
             Decimal::new(10, 0),
         );
         let claims = vec![
-            Claim::new(
-                "A".into(),
-                None,
-                "AAPL".into(),
-                Amount::Dollars(Decimal::new(-400, 0)),
-            ),
-            Claim::new(
-                "B".into(),
-                None,
-                "AAPL".into(),
-                Amount::Dollars(Decimal::new(400, 0)),
-            ),
+            Claim::new("A".into(), None, "AAPL".into(), Amount::Dollars(Decimal::new(-400, 0))),
+            Claim::new("B".into(), None, "AAPL".into(), Amount::Dollars(Decimal::new(400, 0))),
             Claim::new(
                 "C".into(),
                 Some("B2".into()),

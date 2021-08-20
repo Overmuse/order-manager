@@ -47,10 +47,7 @@ pub async fn get_pending_trades_by_ticker<T: GenericClient>(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn get_pending_trade_by_id<T: GenericClient>(
-    client: &T,
-    id: Uuid,
-) -> Result<Option<PendingTrade>, Error> {
+pub async fn get_pending_trade_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<Option<PendingTrade>, Error> {
     trace!(%id, "Getting pending trade");
     client
         .query_opt("SELECT * FROM pending_trades where id = $1", &[&id])
@@ -60,27 +57,16 @@ pub async fn get_pending_trade_by_id<T: GenericClient>(
 }
 
 #[tracing::instrument(skip(client, id, qty))]
-pub async fn update_pending_trade_qty<T: GenericClient>(
-    client: &T,
-    id: Uuid,
-    qty: i32,
-) -> Result<()> {
+pub async fn update_pending_trade_qty<T: GenericClient>(client: &T, id: Uuid, qty: i32) -> Result<()> {
     trace!(%id, qty, "Updating pending trade qty");
     client
-        .execute(
-            "UPDATE pending_trades SET pending_qty = $1 WHERE id = $2",
-            &[&qty, &id],
-        )
+        .execute("UPDATE pending_trades SET pending_qty = $1 WHERE id = $2", &[&qty, &id])
         .await?;
     Ok(())
 }
 
 #[tracing::instrument(skip(client, id, status))]
-pub async fn update_pending_trade_status<T: GenericClient>(
-    client: &T,
-    id: Uuid,
-    status: Status,
-) -> Result<()> {
+pub async fn update_pending_trade_status<T: GenericClient>(client: &T, id: Uuid, status: Status) -> Result<()> {
     trace!(%id, ?status, "Updating pending trade status");
     client
         .execute(
@@ -92,10 +78,7 @@ pub async fn update_pending_trade_status<T: GenericClient>(
 }
 
 #[tracing::instrument(skip(client, pending_trade))]
-pub async fn save_pending_trade<T: GenericClient>(
-    client: &T,
-    pending_trade: PendingTrade,
-) -> Result<()> {
+pub async fn save_pending_trade<T: GenericClient>(client: &T, pending_trade: PendingTrade) -> Result<()> {
     trace!(id = %pending_trade.id, "Saving pending trade");
     client.execute(
         "INSERT INTO pending_trades (id, ticker, quantity, pending_quantity, datetime, status) VALUES ($1, $2, $3, $4, $5, $6)", 
