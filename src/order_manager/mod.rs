@@ -1,6 +1,7 @@
 use crate::db;
 use crate::order_manager::input::State;
 use crate::redis::Redis;
+use crate::settings::AppSettings;
 use crate::types::{Owner, PendingTrade, Status};
 use crate::TradeSenderHandle;
 use alpaca::AlpacaMessage;
@@ -28,6 +29,7 @@ pub struct OrderManager {
     trade_sender: TradeSenderHandle,
     db_client: Arc<Client>,
     redis: Redis,
+    settings: AppSettings,
 }
 
 impl OrderManager {
@@ -38,6 +40,7 @@ impl OrderManager {
         trade_sender: TradeSenderHandle,
         db_client: Arc<Client>,
         redis: Redis,
+        settings: AppSettings,
     ) -> Self {
         Self {
             kafka_consumer,
@@ -46,6 +49,7 @@ impl OrderManager {
             trade_sender,
             db_client,
             redis,
+            settings,
         }
     }
 
@@ -112,7 +116,8 @@ impl OrderManager {
     async fn cancel_old_pending_trades(&self) -> Result<()> {
         let pending_trades = db::get_pending_trades(self.db_client.as_ref()).await?;
         for trade in pending_trades {
-            if (Utc::now() - trade.datetime) > Duration::seconds(10)
+            if (Utc::now() - trade.datetime)
+                > Duration::seconds(self.settings.unreported_trade_expiry_seconds as i64)
                 && trade.status == Status::Unreported
             {
                 warn!(id = %trade.id, "Deleting unreported trade");

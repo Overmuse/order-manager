@@ -56,6 +56,7 @@ async fn main() -> Result<()> {
         .unwrap();
 
     tokio::spawn(async move {
+        std::env::set_var("APP__UNREPORTED_TRADE_EXPIRY_SECONDS", "1");
         std::env::set_var("DATABASE__NAME", database_name);
         std::env::set_var("DATABASE__URL", database_address);
         std::env::set_var("REDIS__URL", "redis://localhost:6379");
@@ -306,8 +307,8 @@ async fn main() -> Result<()> {
     .await
     .unwrap();
     let _trade_indent = receive_ti(&consumer).await.unwrap();
-    info!("SLEEPING 10 SECONDS");
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    info!("SLEEPING 1 SECOND TO LET UNREPORTED TRADE EXPIRE");
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     let record = FutureRecord::to("time")
         .key("")
         .payload(r#"{"state":"open","next_close":710}"#);
