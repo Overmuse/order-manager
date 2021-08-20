@@ -15,11 +15,7 @@ pub async fn get_allocations<T: GenericClient>(client: &T) -> Result<Vec<Allocat
         .collect()
 }
 
-pub async fn set_allocation_owner<T: GenericClient>(
-    client: &T,
-    id: Uuid,
-    owner: &Owner,
-) -> Result<(), Error> {
+pub async fn set_allocation_owner<T: GenericClient>(client: &T, id: Uuid, owner: &Owner) -> Result<(), Error> {
     trace!("Updating allocation owner");
     let (owner, sub_owner) = match owner {
         Owner::House => ("House", None),
@@ -36,10 +32,7 @@ pub async fn set_allocation_owner<T: GenericClient>(
         }
         None => {
             client
-                .query(
-                    "UPDATE allocations SET owner = $1 WHERE id = $2",
-                    &[&owner, &id],
-                )
+                .query("UPDATE allocations SET owner = $1 WHERE id = $2", &[&owner, &id])
                 .await?
         }
     };
@@ -47,10 +40,7 @@ pub async fn set_allocation_owner<T: GenericClient>(
 }
 
 #[tracing::instrument(skip(client, allocation))]
-pub async fn save_allocation<T: GenericClient>(
-    client: &T,
-    allocation: &Allocation,
-) -> Result<(), Error> {
+pub async fn save_allocation<T: GenericClient>(client: &T, allocation: &Allocation) -> Result<(), Error> {
     trace!("Saving allocation");
     let (owner, sub_owner) = match &allocation.owner {
         Owner::House => ("House", None),

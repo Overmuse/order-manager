@@ -69,11 +69,7 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent))]
-    async fn evaluate_single_ticker_intent(
-        &self,
-        intent: &PositionIntent,
-        ticker: &str,
-    ) -> Result<()> {
+    async fn evaluate_single_ticker_intent(&self, intent: &PositionIntent, ticker: &str) -> Result<()> {
         let maybe_position = db::get_position_by_owner_and_ticker(
             self.db_client.as_ref(),
             &Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
@@ -81,10 +77,7 @@ impl OrderManager {
         )
         .await
         .context("Failed to get positions")?;
-        let strategy_shares = maybe_position
-            .as_ref()
-            .map(|x| x.shares)
-            .unwrap_or(Decimal::ZERO);
+        let strategy_shares = maybe_position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO);
         let maybe_claim = self.make_claim(intent, ticker, strategy_shares).await?;
         if let Some(mut claim) = maybe_claim {
             self.net_claim(&mut claim).await?;
@@ -126,12 +119,11 @@ impl OrderManager {
             }
             _ => unreachable!(),
         };
-        let pending_shares =
-            db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
-                .await
-                .context("Failed to get pending trade amount")?
-                .unwrap_or(0)
-                .into();
+        let pending_shares = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+            .await
+            .context("Failed to get pending trade amount")?
+            .unwrap_or(0)
+            .into();
         let total_shares = positions.iter().map(|pos| pos.shares).sum();
 
         let (sent, maybe_saved) = self.make_trades(
@@ -163,22 +155,18 @@ impl OrderManager {
                     debug!("UpdatePolicy::Retain: No trading needed");
                     return Ok(());
                 }
-                UpdatePolicy::RetainLong => {
-                    db::get_positions_by_owner(self.db_client.as_ref(), &owner)
-                        .await
-                        .context("Failed to get positions")?
-                        .into_iter()
-                        .filter(|pos| pos.is_short())
-                        .collect()
-                }
-                UpdatePolicy::RetainShort => {
-                    db::get_positions_by_owner(self.db_client.as_ref(), &owner)
-                        .await
-                        .context("Failed to get position")?
-                        .into_iter()
-                        .filter(|pos| pos.is_long())
-                        .collect()
-                }
+                UpdatePolicy::RetainLong => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
+                    .await
+                    .context("Failed to get positions")?
+                    .into_iter()
+                    .filter(|pos| pos.is_short())
+                    .collect(),
+                UpdatePolicy::RetainShort => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
+                    .await
+                    .context("Failed to get position")?
+                    .into_iter()
+                    .filter(|pos| pos.is_long())
+                    .collect(),
                 UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
                     .await
                     .context("Failed to get positions")?,
@@ -225,17 +213,13 @@ impl OrderManager {
             }
             UpdatePolicy::RetainLong => {
                 if strategy_shares > Decimal::ZERO {
-                    debug!(
-                        "UpdatePolicy::RetainLong and existing long position: No trading needed",
-                    );
+                    debug!("UpdatePolicy::RetainLong and existing long position: No trading needed",);
                     return Ok(None);
                 }
             }
             UpdatePolicy::RetainShort => {
                 if strategy_shares < Decimal::ZERO {
-                    debug!(
-                        "UpdatePolicy::RetainShort and existing short position: No trading needed",
-                    );
+                    debug!("UpdatePolicy::RetainShort and existing short position: No trading needed",);
                     return Ok(None);
                 }
             }
@@ -244,10 +228,7 @@ impl OrderManager {
         let diff_amount = match intent.amount {
             Amount::Dollars(dollars) => {
                 let price: Option<f64> = self.redis.get(&format!("price/{}", ticker)).await?;
-                let price = price
-                    .map(Decimal::from_f64)
-                    .flatten()
-                    .or(intent.limit_price);
+                let price = price.map(Decimal::from_f64).flatten().or(intent.limit_price);
                 match price {
                     Some(price) => Amount::Dollars(dollars - price * strategy_shares),
                     None => {
@@ -272,15 +253,7 @@ impl OrderManager {
         Ok(Some(claim))
     }
 
-    #[tracing::instrument(skip(
-        self,
-        ticker,
-        diff_shares,
-        total_shares,
-        pending_shares,
-        limit_price,
-        stop_price
-    ))]
+    #[tracing::instrument(skip(self, ticker, diff_shares, total_shares, pending_shares, limit_price, stop_price))]
     fn make_trades(
         &self,
         ticker: &str,
@@ -290,18 +263,13 @@ impl OrderManager {
         limit_price: Option<Decimal>,
         stop_price: Option<Decimal>,
     ) -> Result<(TradeIntent, Option<TradeIntent>)> {
-        let signum_product = (total_shares + pending_shares).signum()
-            * (diff_shares + total_shares + pending_shares).signum();
+        let signum_product =
+            (total_shares + pending_shares).signum() * (diff_shares + total_shares + pending_shares).signum();
         if !signum_product.is_sign_negative() {
             let sent = make_trade_intent(ticker, diff_shares, limit_price, stop_price)?;
             Ok((sent, None))
         } else {
-            let sent = make_trade_intent(
-                ticker,
-                -(total_shares + pending_shares),
-                limit_price,
-                stop_price,
-            )?;
+            let sent = make_trade_intent(ticker, -(total_shares + pending_shares), limit_price, stop_price)?;
             let saved = make_trade_intent(
                 ticker,
                 diff_shares + total_shares + pending_shares,
@@ -313,12 +281,8 @@ impl OrderManager {
     }
 
     async fn net_claim(&self, claim: &mut Claim) -> Result<()> {
-        let _maybe_house_position = db::get_position_by_owner_and_ticker(
-            self.db_client.as_ref(),
-            &Owner::House,
-            &claim.ticker,
-        )
-        .await?;
+        let _maybe_house_position =
+            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), &Owner::House, &claim.ticker).await?;
         // TODO: Actually net the claim
 
         Ok(())

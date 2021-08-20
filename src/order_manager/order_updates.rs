@@ -16,16 +16,13 @@ impl OrderManager {
         let id = Uuid::parse_str(&event.order.client_order_id)?;
         let ticker = &event.order.symbol;
         let qty = match event.order.side {
-            Side::Buy => Decimal::from_usize(event.order.qty)
-                .ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
-            Side::Sell => -Decimal::from_usize(event.order.qty)
-                .ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
+            Side::Buy => Decimal::from_usize(event.order.qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
+            Side::Sell => -Decimal::from_usize(event.order.qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
         };
         debug!(status = ?event.event, "Order status update");
         match event.event {
             Event::New => {
-                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Accepted)
-                    .await?;
+                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Accepted).await?;
             }
             Event::Canceled { .. } | Event::Expired { .. } | Event::Rejected { .. } => {
                 db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Dead).await?;
@@ -33,12 +30,9 @@ impl OrderManager {
                     .await
                     .context("Failed to delete pending trade")?;
             }
-            Event::Fill {
-                price, timestamp, ..
-            } => {
+            Event::Fill { price, timestamp, .. } => {
                 debug!("Order filled");
-                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Filled)
-                    .await?;
+                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Filled).await?;
                 let new_lot = self
                     .make_lot(id, ticker, timestamp, price, qty)
                     .await
@@ -52,23 +46,14 @@ impl OrderManager {
                     .await
                     .context("Failed to save lot")?;
                 debug!("Assigning lot");
-                self.assign_lot(new_lot)
-                    .await
-                    .context("Failed to assign lot")?;
+                self.assign_lot(new_lot).await.context("Failed to assign lot")?;
                 debug!("Triggering dependent trades");
                 self.trigger_dependent_trades(id)
                     .await
                     .context("Failed to trigger dependent-trades")?
             }
-            Event::PartialFill {
-                price, timestamp, ..
-            } => {
-                db::update_pending_trade_status(
-                    self.db_client.as_ref(),
-                    id,
-                    Status::PartiallyFilled,
-                )
-                .await?;
+            Event::PartialFill { price, timestamp, .. } => {
+                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::PartiallyFilled).await?;
                 let pending_trade = db::get_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to get pending trade")?
@@ -98,9 +83,7 @@ impl OrderManager {
                 db::save_lot(self.db_client.as_ref(), &new_lot)
                     .await
                     .context("Failed to make lot")?;
-                self.assign_lot(new_lot)
-                    .await
-                    .context("Failed to assign lot")?;
+                self.assign_lot(new_lot).await.context("Failed to assign lot")?;
             }
             _ => (),
         }
@@ -118,15 +101,8 @@ impl OrderManager {
     ) -> Result<Lot> {
         let (previous_quantity, previous_price) = self.previous_fill_data(id).await?;
         let new_quantity = position_quantity - previous_quantity;
-        let new_price =
-            (price * position_quantity - previous_quantity * previous_price) / new_quantity;
-        Ok(Lot::new(
-            id,
-            ticker.to_string(),
-            timestamp,
-            new_price,
-            new_quantity,
-        ))
+        let new_price = (price * position_quantity - previous_quantity * previous_price) / new_quantity;
+        Ok(Lot::new(id, ticker.to_string(), timestamp, new_price, new_quantity))
     }
 
     #[tracing::instrument(skip(self, order_id))]
@@ -134,15 +110,15 @@ impl OrderManager {
         let previous_lots = db::get_lots_by_order_id(self.db_client.as_ref(), order_id)
             .await
             .context("Failed to get lots")?;
-        let (prev_qty, prev_price) = previous_lots.iter().fold(
-            (Decimal::new(0, 0), Decimal::new(1, 0)),
-            |(shares, price), lot| {
-                (
-                    shares + lot.shares,
-                    (price * shares + lot.price) / (shares + lot.shares),
-                )
-            },
-        );
+        let (prev_qty, prev_price) =
+            previous_lots
+                .iter()
+                .fold((Decimal::new(0, 0), Decimal::new(1, 0)), |(shares, price), lot| {
+                    (
+                        shares + lot.shares,
+                        (price * shares + lot.price) / (shares + lot.shares),
+                    )
+                });
         Ok((prev_qty, prev_price))
     }
 
@@ -153,9 +129,7 @@ impl OrderManager {
             .context("Failed to get claim")?;
         let allocations = split_lot(&claims, &lot);
         for allocation in allocations {
-            self.adjust_claim(&allocation)
-                .await
-                .context("Failed to adjust claim")?;
+            self.adjust_claim(&allocation).await.context("Failed to adjust claim")?;
             db::save_allocation(self.db_client.as_ref(), &allocation)
                 .await
                 .context("Failed to save allocation")?;

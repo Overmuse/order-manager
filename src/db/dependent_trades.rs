@@ -5,11 +5,7 @@ use trading_base::{OrderType, TradeIntent};
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client, id, dependent_trade))]
-pub async fn save_dependent_trade<T: GenericClient>(
-    client: &T,
-    id: Uuid,
-    dependent_trade: &TradeIntent,
-) -> Result<()> {
+pub async fn save_dependent_trade<T: GenericClient>(client: &T, id: Uuid, dependent_trade: &TradeIntent) -> Result<()> {
     trace!(%id, "Saving dependent trade");
     let (order_type, limit_price, stop_price) = match dependent_trade.order_type {
         OrderType::Market => ("market", None, None),
@@ -38,10 +34,7 @@ pub async fn save_dependent_trade<T: GenericClient>(
 }
 
 #[tracing::instrument(skip(client, id))]
-pub async fn take_dependent_trades<T: GenericClient>(
-    client: &T,
-    id: Uuid,
-) -> Result<Vec<TradeIntent>> {
+pub async fn take_dependent_trades<T: GenericClient>(client: &T, id: Uuid) -> Result<Vec<TradeIntent>> {
     trace!(%id, "Saving dependent trade");
     client
         .query(

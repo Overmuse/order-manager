@@ -31,19 +31,14 @@ pub async fn run(settings: Settings) -> Result<()> {
     let (scheduled_intents_tx2, scheduled_intents_rx2) = unbounded_channel();
     let trade_sender_handle = TradeSenderHandle::new(producer);
     let intent_scheduler = IntentScheduler::new(scheduled_intents_tx1, scheduled_intents_rx2);
-    let (mut client, connection) = connect(
-        &format!("{}/{}", settings.database.url, settings.database.name,),
-        NoTls,
-    )
-    .await?;
+    let (mut client, connection) =
+        connect(&format!("{}/{}", settings.database.url, settings.database.name,), NoTls).await?;
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             error!("connection error: {}", e);
         }
     });
-    embedded::migrations::runner()
-        .run_async(&mut client)
-        .await?;
+    embedded::migrations::runner().run_async(&mut client).await?;
     let redis = redis::Redis::new(settings.redis)?;
     let client = Arc::new(client);
     let order_manager = OrderManager::new(

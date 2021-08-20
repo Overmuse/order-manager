@@ -55,11 +55,7 @@ impl OrderManager {
 
     pub async fn run(mut self) {
         info!("Starting OrderManager");
-        if let Err(e) = self
-            .initalize()
-            .await
-            .context("Failed to initialize order manager")
-        {
+        if let Err(e) = self.initalize().await.context("Failed to initialize order manager") {
             error!("{:?}", e)
         };
 
@@ -116,8 +112,7 @@ impl OrderManager {
     async fn cancel_old_pending_trades(&self) -> Result<()> {
         let pending_trades = db::get_pending_trades(self.db_client.as_ref()).await?;
         for trade in pending_trades {
-            if (Utc::now() - trade.datetime)
-                > Duration::seconds(self.settings.unreported_trade_expiry_seconds as i64)
+            if (Utc::now() - trade.datetime) > Duration::seconds(self.settings.unreported_trade_expiry_seconds as i64)
                 && trade.status == Status::Unreported
             {
                 warn!(id = %trade.id, "Deleting unreported trade");
@@ -131,36 +126,26 @@ impl OrderManager {
         let claims = db::get_claims(self.db_client.as_ref()).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
         for claim in claims {
-            let pending_trade_amount =
-                db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker)
-                    .await?
-                    .unwrap_or(0);
+            let pending_trade_amount = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker)
+                .await?
+                .unwrap_or(0);
 
             if pending_trade_amount == 0 {
-                self.generate_trades(&claim.ticker, &claim.amount, None, None)
-                    .await?;
+                self.generate_trades(&claim.ticker, &claim.amount, None, None).await?;
             }
         }
         Ok(())
     }
 
     async fn reconcile_house_positions(&self) -> Result<()> {
-        let house_positions =
-            db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
-        let house_positions = house_positions
-            .iter()
-            .filter(|pos| pos.shares != Decimal::ZERO);
+        let house_positions = db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
+        let house_positions = house_positions.iter().filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
             if position.shares.abs() > Decimal::from_f64(0.99).unwrap() {
                 let mut shares_to_liquidate = position.shares.abs() - Decimal::ONE;
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
-                self.generate_trades(
-                    &position.ticker,
-                    &Amount::Shares(-shares_to_liquidate),
-                    None,
-                    None,
-                )
-                .await?
+                self.generate_trades(&position.ticker, &Amount::Shares(-shares_to_liquidate), None, None)
+                    .await?
             }
         }
         Ok(())
@@ -174,10 +159,7 @@ impl OrderManager {
         .await
         .context("Failed to save pending trade")?;
 
-        self.trade_sender
-            .send(trade)
-            .await
-            .context("Failed to send trade")?;
+        self.trade_sender.send(trade).await.context("Failed to send trade")?;
         Ok(())
     }
 }

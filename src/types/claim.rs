@@ -17,12 +17,7 @@ pub struct Claim {
 
 impl Claim {
     #[tracing::instrument(skip(strategy, sub_strategy, ticker, amount))]
-    pub fn new(
-        strategy: String,
-        sub_strategy: Option<String>,
-        ticker: String,
-        amount: Amount,
-    ) -> Self {
+    pub fn new(strategy: String, sub_strategy: Option<String>, ticker: String, amount: Amount) -> Self {
         trace!(%strategy, ?sub_strategy, %ticker, ?amount, "New Claim");
         Self {
             id: Uuid::new_v4(),

@@ -24,9 +24,7 @@ async fn send_position(producer: &FutureProducer, intent: &PositionIntent) -> Re
         Identifier::All => "",
     }
     .to_string();
-    let message = FutureRecord::to("position-intents")
-        .key(&key)
-        .payload(&payload);
+    let message = FutureRecord::to("position-intents").key(&key).payload(&payload);
     producer
         .send_result(message)
         .map_err(|(e, m)| anyhow!("{:?}\n{:?}", e, m))?
@@ -62,10 +60,7 @@ async fn main() -> Result<()> {
         std::env::set_var("REDIS__URL", "redis://localhost:6379");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
         std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
-        std::env::set_var(
-            "KAFKA__INPUT_TOPICS",
-            "overmuse-trades,position-intents,time",
-        );
+        std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents,time");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVERS", "localhost:9094");
         std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
         std::env::set_var("KAFKA__ACKS", "0");
@@ -84,12 +79,7 @@ async fn main() -> Result<()> {
     let record = FutureRecord::to("time")
         .key("")
         .payload(r#"{"state":"open","next_close":710}"#);
-    producer
-        .send_result(record)
-        .unwrap()
-        .await
-        .unwrap()
-        .unwrap();
+    producer.send_result(record).unwrap().await.unwrap().unwrap();
 
     // TEST 1: An initial position intent leads to an trade intent for the full size of the
     // position intent.
@@ -182,9 +172,7 @@ async fn main() -> Result<()> {
     info!("Test 5");
     send_position(
         &producer,
-        &PositionIntent::builder("S1", "AAPL", Amount::Zero)
-            .build()
-            .unwrap(),
+        &PositionIntent::builder("S1", "AAPL", Amount::Zero).build().unwrap(),
     )
     .await
     .unwrap();
@@ -312,12 +300,7 @@ async fn main() -> Result<()> {
     let record = FutureRecord::to("time")
         .key("")
         .payload(r#"{"state":"open","next_close":710}"#);
-    producer
-        .send_result(record)
-        .unwrap()
-        .await
-        .unwrap()
-        .unwrap();
+    producer.send_result(record).unwrap().await.unwrap().unwrap();
     let trade_indent = receive_ti(&consumer).await.unwrap();
     let new_id = trade_indent.id;
     let fill_message = format!(

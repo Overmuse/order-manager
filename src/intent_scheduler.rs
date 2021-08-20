@@ -13,10 +13,7 @@ pub struct IntentScheduler {
 }
 
 impl IntentScheduler {
-    pub fn new(
-        sender: UnboundedSender<PositionIntent>,
-        receiver: UnboundedReceiver<PositionIntent>,
-    ) -> Self {
+    pub fn new(sender: UnboundedSender<PositionIntent>, receiver: UnboundedReceiver<PositionIntent>) -> Self {
         Self {
             scheduled_intents: DelayQueue::new(),
             sender,

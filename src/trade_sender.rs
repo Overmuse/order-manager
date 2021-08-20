@@ -23,9 +23,7 @@ impl TradeSender {
             let payload = serde_json::to_string(&oi);
             match payload {
                 Ok(payload) => {
-                    let record = FutureRecord::to("trade-intents")
-                        .key(&oi.ticker)
-                        .payload(&payload);
+                    let record = FutureRecord::to("trade-intents").key(&oi.ticker).payload(&payload);
                     let send = self.producer.send(record, Duration::from_secs(0)).await;
                     if let Err((e, m)) = send {
                         error!("Error: {:?}\nMessage: {:?}", e, m)
