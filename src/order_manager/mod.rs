@@ -131,7 +131,8 @@ impl OrderManager {
                 .unwrap_or(0);
 
             if pending_trade_amount == 0 {
-                self.generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None).await?;
+                self.generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None)
+                    .await?;
             }
         }
         Ok(())
@@ -142,7 +143,8 @@ impl OrderManager {
         let house_positions = house_positions.iter().filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
             if position.shares.abs() > Decimal::from_f64(0.99).unwrap() {
-                let mut shares_to_liquidate = (position.shares.abs() - Decimal::from_f64(0.99).unwrap()).round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
+                let mut shares_to_liquidate = (position.shares.abs() - Decimal::from_f64(0.99).unwrap())
+                    .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
                 self.generate_trades(&position.ticker, &Amount::Shares(-shares_to_liquidate), None, None)
                     .await?
