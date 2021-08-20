@@ -3,6 +3,11 @@ use kafka_settings::KafkaSettings;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+pub struct AppSettings {
+    pub unreported_trade_expiry_seconds: usize,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Database {
     pub url: String,
     pub name: String,
@@ -20,6 +25,7 @@ pub struct WebServerSettings {
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
+    pub app: AppSettings,
     pub database: Database,
     pub kafka: KafkaSettings,
     pub redis: RedisSettings,

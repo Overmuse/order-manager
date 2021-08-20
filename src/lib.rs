@@ -53,6 +53,7 @@ pub async fn run(settings: Settings) -> Result<()> {
         trade_sender_handle,
         client.clone(),
         redis,
+        settings.app,
     );
     tokio::join!(
         webserver::run(settings.webserver.port, client),
