@@ -1,12 +1,14 @@
+use order_manager::{run, Settings};
 use rdkafka::{
     admin::{AdminClient, AdminOptions, NewTopic, TopicReplication},
     client::DefaultClientContext,
-    consumer::StreamConsumer,
+    consumer::{Consumer, StreamConsumer},
     producer::FutureProducer,
     ClientConfig,
 };
 use tracing::{debug, subscriber::set_global_default};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
+use uuid::Uuid;
 
 pub async fn setup() -> (
     AdminClient<DefaultClientContext>,
@@ -51,7 +53,34 @@ pub async fn setup() -> (
         .create()
         .unwrap();
 
-    debug!("Creating database");
+    debug!("Subscribing to topics");
+    consumer.subscribe(&[&"trade-intents"]).unwrap();
+    consumer
+        .subscription()
+        .unwrap()
+        .set_all_offsets(rdkafka::topic_partition_list::Offset::End)
+        .unwrap();
+
+    let database_address = "postgres://postgres:password@localhost:5432";
+    let database_name = "order-manager";
+    tokio::spawn(async move {
+        std::env::set_var("APP__UNREPORTED_TRADE_EXPIRY_SECONDS", "1");
+        std::env::set_var("DATABASE__NAME", database_name);
+        std::env::set_var("DATABASE__URL", database_address);
+        std::env::set_var("REDIS__URL", "redis://localhost:6379");
+        std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
+        std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
+        std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents,time");
+        std::env::set_var("KAFKA__BOOTSTRAP_SERVERS", "localhost:9094");
+        std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
+        std::env::set_var("KAFKA__ACKS", "0");
+        std::env::set_var("KAFKA__RETRIES", "0");
+        std::env::set_var("WEBSERVER__PORT", "0");
+        let settings = Settings::new();
+        tracing::debug!("{:?}", settings);
+        let res = run(settings.unwrap()).await;
+        tracing::error!("{:?}", res);
+    });
 
     (admin, admin_options, consumer, producer)
 }
