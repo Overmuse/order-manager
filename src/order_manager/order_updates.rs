@@ -72,8 +72,8 @@ impl OrderManager {
                             .ok_or_else(|| anyhow!("Failed to convert Decimal"))?)
                     }
                 };
-                let pending_qty = pending_trade.qty - filled_qty as i32;
-                db::update_pending_trade_qty(self.db_client.as_ref(), id, pending_qty)
+                let pending_qty = pending_trade.quantity - filled_qty as i32;
+                db::update_pending_trade_quantity(self.db_client.as_ref(), id, pending_qty)
                     .await
                     .context("Failed to update pending trade quantity")?;
                 let new_lot = self

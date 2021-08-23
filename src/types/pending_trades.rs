@@ -18,21 +18,21 @@ pub enum Status {
 pub struct PendingTrade {
     pub id: Uuid,
     pub ticker: String,
-    pub qty: i32,
-    pub pending_qty: i32,
+    pub quantity: i32,
+    pub pending_quantity: i32,
     pub datetime: DateTime<Utc>,
     pub status: Status,
 }
 
 impl PendingTrade {
-    #[tracing::instrument(skip(id, ticker, qty))]
-    pub fn new(id: Uuid, ticker: String, qty: i32) -> Self {
-        tracing::trace!(%id, %ticker, %qty, "New PendingTrade");
+    #[tracing::instrument(skip(id, ticker, quantity))]
+    pub fn new(id: Uuid, ticker: String, quantity: i32) -> Self {
+        tracing::trace!(%id, %ticker, %quantity, "New PendingTrade");
         Self {
             id,
             ticker,
-            qty,
-            pending_qty: qty,
+            quantity,
+            pending_quantity: quantity,
             datetime: Utc::now(),
             status: Status::Unreported,
         }
@@ -54,8 +54,8 @@ impl TryFrom<Row> for PendingTrade {
         Ok(Self {
             id: row.try_get("id")?,
             ticker: row.try_get("ticker")?,
-            qty: row.try_get("quantity")?,
-            pending_qty: row.try_get("pending_quantity")?,
+            quantity: row.try_get("quantity")?,
+            pending_quantity: row.try_get("pending_quantity")?,
             datetime: row.try_get("datetime")?,
             status,
         })
