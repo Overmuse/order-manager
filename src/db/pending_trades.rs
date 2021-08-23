@@ -56,11 +56,14 @@ pub async fn get_pending_trade_by_id<T: GenericClient>(client: &T, id: Uuid) -> 
         .transpose()
 }
 
-#[tracing::instrument(skip(client, id, qty))]
-pub async fn update_pending_trade_qty<T: GenericClient>(client: &T, id: Uuid, qty: i32) -> Result<()> {
-    trace!(%id, qty, "Updating pending trade qty");
+#[tracing::instrument(skip(client, id, quantity))]
+pub async fn update_pending_trade_quantity<T: GenericClient>(client: &T, id: Uuid, quantity: i32) -> Result<()> {
+    trace!(%id, quantity, "Updating pending trade quantity");
     client
-        .execute("UPDATE pending_trades SET pending_qty = $1 WHERE id = $2", &[&qty, &id])
+        .execute(
+            "UPDATE pending_trades SET pending_quantity = $1 WHERE id = $2",
+            &[&quantity, &id],
+        )
         .await?;
     Ok(())
 }
@@ -85,8 +88,8 @@ pub async fn save_pending_trade<T: GenericClient>(client: &T, pending_trade: Pen
         &[
             &pending_trade.id,
             &pending_trade.ticker,
-            &pending_trade.qty,
-            &pending_trade.pending_qty,
+            &pending_trade.quantity,
+            &pending_trade.pending_quantity,
             &pending_trade.datetime,
             &serde_plain::to_string(&pending_trade.status)?
         ]
