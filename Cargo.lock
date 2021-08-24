@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "order-manager"
-version = "10.4.3"
+version = "10.4.4"
 dependencies = [
  "alpaca",
  "anyhow",

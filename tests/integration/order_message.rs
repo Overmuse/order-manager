@@ -64,7 +64,6 @@ impl OrderMessage {
             serde_plain::to_string(&limit_price).unwrap(),
             self.event_type.format_for_order()
         );
-        tracing::info!("{}", msg);
         msg
     }
 }

@@ -15,9 +15,14 @@ impl OrderManager {
         debug!("Handling order update");
         let id = Uuid::parse_str(&event.order.client_order_id)?;
         let ticker = &event.order.symbol;
+        let price = event.order.filled_avg_price.unwrap_or(Decimal::ONE);
         let qty = match event.order.side {
-            Side::Buy => Decimal::from_usize(event.order.qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
-            Side::Sell => -Decimal::from_usize(event.order.qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
+            Side::Buy => {
+                Decimal::from_usize(event.order.filled_qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?
+            }
+            Side::Sell => {
+                -Decimal::from_usize(event.order.filled_qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?
+            }
         };
         debug!(status = ?event.event, "Order status update");
         match event.event {
@@ -30,7 +35,7 @@ impl OrderManager {
                     .await
                     .context("Failed to delete pending trade")?;
             }
-            Event::Fill { price, timestamp, .. } => {
+            Event::Fill { timestamp, .. } => {
                 debug!("Order filled");
                 db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Filled).await?;
                 let new_lot = self
@@ -52,7 +57,7 @@ impl OrderManager {
                     .await
                     .context("Failed to trigger dependent-trades")?
             }
-            Event::PartialFill { price, timestamp, .. } => {
+            Event::PartialFill { timestamp, .. } => {
                 db::update_pending_trade_status(self.db_client.as_ref(), id, Status::PartiallyFilled).await?;
                 let pending_trade = db::get_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
@@ -99,27 +104,13 @@ impl OrderManager {
         price: Decimal,
         position_quantity: Decimal,
     ) -> Result<Lot> {
-        let (previous_quantity, previous_price) = self.previous_fill_data(id).await?;
-        let new_quantity = position_quantity - previous_quantity;
-        let new_price = (price * position_quantity - previous_quantity * previous_price) / new_quantity;
-        Ok(Lot::new(id, ticker.to_string(), timestamp, new_price, new_quantity))
-    }
-
-    #[tracing::instrument(skip(self, order_id))]
-    async fn previous_fill_data(&self, order_id: Uuid) -> Result<(Decimal, Decimal)> {
-        let previous_lots = db::get_lots_by_order_id(self.db_client.as_ref(), order_id)
+        let previous_lots = db::get_lots_by_order_id(self.db_client.as_ref(), id)
             .await
             .context("Failed to get lots")?;
-        let (prev_qty, prev_price) =
-            previous_lots
-                .iter()
-                .fold((Decimal::new(0, 0), Decimal::new(1, 0)), |(shares, price), lot| {
-                    (
-                        shares + lot.shares,
-                        (price * shares + lot.price) / (shares + lot.shares),
-                    )
-                });
-        Ok((prev_qty, prev_price))
+        let (previous_quantity, previous_price) = aggregate_previous_lots(&previous_lots);
+        let (quantity, price) =
+            calculate_lot_quantity_and_price(previous_quantity, previous_price, position_quantity, price);
+        Ok(Lot::new(id, ticker.to_string(), timestamp, price, quantity))
     }
 
     #[tracing::instrument(skip(self, lot))]
@@ -159,5 +150,59 @@ impl OrderManager {
                 .context("Failed to update claim amount")?;
         };
         Ok(())
+    }
+}
+
+fn aggregate_previous_lots(lots: &[Lot]) -> (Decimal, Decimal) {
+    lots.iter().fold((Decimal::ZERO, Decimal::ONE), |(shares, price), lot| {
+        (
+            shares + lot.shares,
+            (price * shares + lot.price * lot.shares) / (shares + lot.shares),
+        )
+    })
+}
+
+fn calculate_lot_quantity_and_price(
+    old_quantity: Decimal,
+    old_price: Decimal,
+    new_quantity: Decimal,
+    new_price: Decimal,
+) -> (Decimal, Decimal) {
+    let quantity = new_quantity - old_quantity;
+    let price = (new_price * new_quantity - old_price * old_quantity) / quantity;
+    (quantity, price)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const ORDER_ID: Uuid = Uuid::nil();
+
+    fn lot(shares: Decimal, price: Decimal) -> Lot {
+        Lot::new(ORDER_ID, "TICK".to_string(), Utc::now(), price, shares)
+    }
+
+    #[test]
+    fn test_lot_aggregation() {
+        let previous_lots = [
+            lot(Decimal::ONE, Decimal::new(111, 0)),
+            lot(Decimal::TWO, Decimal::new(101, 0)),
+            lot(Decimal::TEN, Decimal::new(100, 0)),
+        ];
+        let (qty, price) = aggregate_previous_lots(&previous_lots);
+        assert_eq!(qty, Decimal::new(13, 0));
+        assert_eq!(price, Decimal::new(101, 0));
+    }
+
+    #[test]
+    fn test_lot_calculation() {
+        let (q, p) = calculate_lot_quantity_and_price(Decimal::ZERO, Decimal::ONE, Decimal::TWO, Decimal::ONE_HUNDRED);
+        assert_eq!(q, Decimal::TWO);
+        assert_eq!(p, Decimal::ONE_HUNDRED);
+
+        let (q2, p2) = calculate_lot_quantity_and_price(q, p, Decimal::TEN, Decimal::ONE_THOUSAND);
+        assert_eq!(q2, Decimal::new(8, 0));
+        assert_eq!(p2, Decimal::new(1225, 0));
     }
 }
