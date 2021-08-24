@@ -7,14 +7,12 @@ use uuid::Uuid;
 #[serde(rename_all = "snake_case")]
 pub enum EventType {
     Fill,
-    PartialFill,
 }
 
 impl EventType {
     fn format_for_order(&self) -> &'static str {
         match self {
             Self::Fill => "filled",
-            Self::PartialFill => "partially_filled",
         }
     }
 }

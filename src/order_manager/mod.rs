@@ -19,7 +19,6 @@ mod intents;
 mod order_updates;
 mod reconciliation;
 use input::Input;
-use intents::PositionIntentExt;
 
 pub struct OrderManager {
     kafka_consumer: StreamConsumer,
@@ -72,11 +71,9 @@ impl OrderManager {
             .await
             .context("Failed to get scheduled intents")?;
         for intent in scheduled_intents {
-            if !intent.is_active() {
-                self.schedule_position_intent(intent)
-                    .await
-                    .context("Failed to schedule position intent")?
-            }
+            self.schedule_position_intent(intent)
+                .await
+                .context("Failed to schedule position intent")?
         }
         Ok(())
     }
