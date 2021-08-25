@@ -1,13 +1,13 @@
 [package]
 name = "order-manager"
-version = "10.4.4"
+version = "10.5.0"
 authors = ["Sebastian Rollen <seb@overmu.se>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-alpaca = {git = "ssh://git@github.com/Overmuse/alpaca.git", tag = "v0.7.1", default-features = false, features = ["rest", "ws"]}
+alpaca = {git = "ssh://git@github.com/Overmuse/alpaca.git", tag = "v0.9.0"}
 anyhow = "1.0"
 chrono = "0.4"
 config = "0.11"

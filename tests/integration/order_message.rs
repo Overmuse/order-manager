@@ -49,8 +49,9 @@ impl OrderMessage {
         };
 
         let msg = format!(
-            r#"{{"stream":"trade_updates","data":{{"event":"{}","position_qty":"{}","price":"{}","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:38:01.937734Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"{}","asset_class":"us_equity","notional":null,"qty":"{}","filled_qty":"{}","filled_avg_price":"{}","order_class":"simple","order_type":"{}","type":"{}","side":"{}","time_in_force":"day","limit_price":{},"stop_price":null,"status":"{}","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
+            r#"{{"stream":"trade_updates","data":{{"event":"{}","qty":"{}","position_qty":"{}","price":"{}","timestamp":"2021-03-16T18:39:00Z","order":{{"id":"61e69015-8549-4bfd-b9c3-01e75843f47d","client_order_id":"{}","created_at":"2021-03-16T18:38:01.942282Z","updated_at":"2021-03-16T18:38:01.942282Z","submitted_at":"2021-03-16T18:38:01.937734Z","filled_at":"2021-03-16T18:38:01.937734Z","expired_at":null,"canceled_at":null,"failed_at":null,"replaced_at":null,"replaced_by":null,"replaces":null,"asset_id":"b0b6dd9d-8b9b-48a9-ba46-b9d54906e415","symbol":"{}","asset_class":"us_equity","notional":null,"qty":"{}","filled_qty":"{}","filled_avg_price":"{}","order_class":"simple","order_type":"{}","type":"{}","side":"{}","time_in_force":"day","limit_price":{},"stop_price":null,"status":"{}","extended_hours":false,"legs":null,"trail_percent":null,"trail_price":null,"hwm":null}}}}}}"#,
             serde_plain::to_string(&self.event_type).unwrap(),
+            self.qty,
             self.position_qty,
             self.price,
             self.client_order_id,
