@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
 pub async fn get_scheduled_indents<T: GenericClient>(client: &T) -> Result<Vec<PositionIntent>> {
-    trace!("Getting scheduled intents");
+    trace!("Fetching all scheduled intents");
     client
         .query("SELECT * FROM scheduled_intents", &[])
         .await?
@@ -82,7 +82,7 @@ pub async fn save_scheduled_intent<T: GenericClient>(client: &T, scheduled_inten
 
 #[tracing::instrument(skip(client, id))]
 pub async fn delete_scheduled_intent<T: GenericClient>(client: &T, id: Uuid) -> Result<()> {
-    trace!(%id, "Deleting scheduled intent");
+    trace!(%id, "Deleting scheduled intent for id");
     client
         .execute("DELETE FROM scheduled_intents WHERE id = $1", &[&id])
         .await?;

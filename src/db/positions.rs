@@ -5,7 +5,7 @@ use tracing::trace;
 
 #[tracing::instrument(skip(client, owner))]
 pub async fn get_positions_by_owner<T: GenericClient>(client: &T, owner: &Owner) -> Result<Vec<Position>, Error> {
-    trace!("Getting positions");
+    trace!(%owner, "Fetching positions for owner");
     let (owner, sub_owner) = match owner {
         Owner::House => ("House", None),
         Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
@@ -24,7 +24,7 @@ pub async fn get_positions_by_owner<T: GenericClient>(client: &T, owner: &Owner)
 
 #[tracing::instrument(skip(client, ticker))]
 pub async fn get_positions_by_ticker<T: GenericClient>(client: &T, ticker: &str) -> Result<Vec<Position>, Error> {
-    trace!("Getting positions");
+    trace!(ticker, "Fetching positions for ticker");
     client.query("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE ticker = $1 GROUP BY owner, sub_owner, ticker", &[&ticker])
             .await?
             .into_iter()
@@ -38,7 +38,7 @@ pub async fn get_position_by_owner_and_ticker<T: GenericClient>(
     owner: &Owner,
     ticker: &str,
 ) -> Result<Option<Position>, Error> {
-    trace!("Getting positions");
+    trace!(%owner, ticker, "Fetching positions for owner and ticker");
     let (owner, sub_owner) = match owner {
         Owner::House => ("House", None),
         Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
@@ -57,7 +57,7 @@ pub async fn get_position_by_owner_and_ticker<T: GenericClient>(
 
 #[tracing::instrument(skip(client))]
 pub async fn get_positions<T: GenericClient>(client: &T) -> Result<Vec<Position>, Error> {
-    trace!("Getting positions");
+    trace!("Fetching all positions");
     client
         .query("SELECT * FROM allocations", &[])
         .await?

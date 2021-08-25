@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
 pub async fn get_allocations<T: GenericClient>(client: &T) -> Result<Vec<Allocation>, Error> {
-    trace!("Getting allocations");
+    trace!("Fetching all allocations");
     client
         .query("SELECT * FROM allocations", &[])
         .await?

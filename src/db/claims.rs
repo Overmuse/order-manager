@@ -7,7 +7,7 @@ use trading_base::Amount;
 use uuid::Uuid;
 
 pub async fn get_claims<T: GenericClient>(client: &T) -> Result<Vec<Claim>, Error> {
-    trace!("Getting claims");
+    trace!("Fetching all claims");
     client
         .query("SELECT * FROM claims", &[])
         .await?
@@ -18,7 +18,7 @@ pub async fn get_claims<T: GenericClient>(client: &T) -> Result<Vec<Claim>, Erro
 
 #[tracing::instrument(skip(client, ticker))]
 pub async fn get_claims_by_ticker<T: GenericClient>(client: &T, ticker: &str) -> Result<Vec<Claim>, Error> {
-    trace!(ticker, "Getting claims");
+    trace!(ticker, "Fetching claims for ticker");
     client
         .query("SELECT * FROM claims WHERE ticker = $1", &[&ticker])
         .await?
@@ -29,7 +29,7 @@ pub async fn get_claims_by_ticker<T: GenericClient>(client: &T, ticker: &str) ->
 
 #[tracing::instrument(skip(client, id))]
 pub async fn get_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<Claim, Error> {
-    trace!(%id, "Getting claim");
+    trace!(%id, "Fetching claim for id");
     client
         .query_one("SELECT * FROM claims WHERE id = $1", &[&id])
         .await?
@@ -51,7 +51,7 @@ pub async fn update_claim_amount<T: GenericClient>(client: &T, id: Uuid, amount:
 
 #[tracing::instrument(skip(client, id))]
 pub async fn delete_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<(), Error> {
-    trace!(%id, "Deleting claim");
+    trace!(%id, "Deleting claim for id");
     client.execute("DELETE FROM claims WHERE id = $1;", &[&id]).await?;
     Ok(())
 }
