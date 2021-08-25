@@ -35,7 +35,7 @@ pub async fn save_dependent_trade<T: GenericClient>(client: &T, id: Uuid, depend
 
 #[tracing::instrument(skip(client, id))]
 pub async fn take_dependent_trades<T: GenericClient>(client: &T, id: Uuid) -> Result<Vec<TradeIntent>> {
-    trace!(%id, "Saving dependent trade");
+    trace!(%id, "Fetching and deleting dependent trade");
     client
         .query(
             "DELETE FROM dependent_trades WHERE dependent_id = $1 RETURNING *",

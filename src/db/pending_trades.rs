@@ -10,7 +10,7 @@ pub async fn get_pending_trade_amount_by_ticker<T: GenericClient>(
     client: &T,
     ticker: &str,
 ) -> Result<Option<i32>, Error> {
-    trace!(ticker, "Getting pending trade amount");
+    trace!(ticker, "Fetching pending trade amount for ticker");
     client
         .query_opt(
             "SELECT pending_quantity FROM pending_trades WHERE ticker = $1",
@@ -23,7 +23,7 @@ pub async fn get_pending_trade_amount_by_ticker<T: GenericClient>(
 
 #[tracing::instrument(skip(client))]
 pub async fn get_pending_trades<T: GenericClient>(client: &T) -> Result<Vec<PendingTrade>, Error> {
-    trace!("Getting pending trades");
+    trace!("Fetching all pending trades");
     client
         .query("SELECT * FROM pending_trades", &[])
         .await?
@@ -37,7 +37,7 @@ pub async fn get_pending_trades_by_ticker<T: GenericClient>(
     client: &T,
     ticker: &str,
 ) -> Result<Vec<PendingTrade>, Error> {
-    trace!("Getting pending trades for ticker {}", ticker);
+    trace!(ticker, "Fetching pending trades for ticker");
     client
         .query("SELECT * FROM pending_trades WHERE ticker = $1", &[&ticker])
         .await?
@@ -48,7 +48,7 @@ pub async fn get_pending_trades_by_ticker<T: GenericClient>(
 
 #[tracing::instrument(skip(client, id))]
 pub async fn get_pending_trade_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<Option<PendingTrade>, Error> {
-    trace!(%id, "Getting pending trade");
+    trace!(%id, "Fetching pending trade for id");
     client
         .query_opt("SELECT * FROM pending_trades where id = $1", &[&id])
         .await?

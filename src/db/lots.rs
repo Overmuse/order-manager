@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[tracing::instrument(skip(client))]
 pub async fn get_lots<T: GenericClient>(client: &T) -> Result<Vec<Lot>, Error> {
-    trace!("Getting lots");
+    trace!("Fetching all lots");
     client
         .query("SELECT * FROM lots", &[])
         .await?
@@ -17,7 +17,7 @@ pub async fn get_lots<T: GenericClient>(client: &T) -> Result<Vec<Lot>, Error> {
 
 #[tracing::instrument(skip(client, order_id))]
 pub async fn get_lots_by_order_id<T: GenericClient>(client: &T, order_id: Uuid) -> Result<Vec<Lot>, Error> {
-    trace!(%order_id, "Getting lots");
+    trace!(%order_id, "Fetching lots for order_id");
     client
         .query("SELECT * FROM lots WHERE order_id = $1", &[&order_id])
         .await?

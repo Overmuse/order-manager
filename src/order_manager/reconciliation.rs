@@ -4,16 +4,18 @@ use crate::OrderManager;
 use anyhow::Result;
 use chrono::{Duration, Utc};
 use rust_decimal::prelude::*;
-use tracing::warn;
+use tracing::{debug, warn};
 use trading_base::Amount;
 
 impl OrderManager {
+    #[tracing::instrument(skip(self))]
     pub async fn reconcile(&self) -> Result<()> {
         self.cancel_old_pending_trades().await?;
         self.reconcile_claims().await?;
         self.reconcile_house_positions().await
     }
 
+    #[tracing::instrument(skip(self))]
     async fn cancel_old_pending_trades(&self) -> Result<()> {
         let pending_trades = db::get_pending_trades(self.db_client.as_ref()).await?;
         for trade in pending_trades {
@@ -27,6 +29,7 @@ impl OrderManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     async fn reconcile_claims(&self) -> Result<()> {
         let claims = db::get_claims(self.db_client.as_ref()).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
@@ -36,6 +39,7 @@ impl OrderManager {
                 .unwrap_or(0);
 
             if pending_trade_amount == 0 {
+                debug!("Unfilled claim, sending new trade");
                 self.generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None)
                     .await?;
             }
@@ -43,11 +47,13 @@ impl OrderManager {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     async fn reconcile_house_positions(&self) -> Result<()> {
         let house_positions = db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
         let house_positions = house_positions.iter().filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
             if position.shares.abs() > Decimal::from_f64(0.99).unwrap() {
+                debug!(ticker = %position.ticker, shares = %position.shares, "Reducing size of house position");
                 let mut shares_to_liquidate = (position.shares.abs() - Decimal::from_f64(0.99).unwrap())
                     .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());

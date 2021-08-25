@@ -96,6 +96,7 @@ impl OrderManager {
             Ok(Input::Time(State::Closed { .. })) => {}
             Err(e) => return Err(e),
         };
+        debug!("Finished handling input");
         Ok(())
     }
 
