@@ -1,9 +1,10 @@
 use crate::db;
+use crate::event_sender::Event;
 use crate::order_manager::input::State;
 use crate::redis::Redis;
 use crate::settings::AppSettings;
 use crate::types::PendingTrade;
-use crate::TradeSenderHandle;
+use crate::EventSenderHandle;
 use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
 use rdkafka::consumer::StreamConsumer;
@@ -24,7 +25,7 @@ pub struct OrderManager {
     kafka_consumer: StreamConsumer,
     scheduler_sender: UnboundedSender<PositionIntent>,
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
-    trade_sender: TradeSenderHandle,
+    event_sender: EventSenderHandle,
     db_client: Arc<Client>,
     redis: Redis,
     settings: AppSettings,
@@ -35,7 +36,7 @@ impl OrderManager {
         kafka_consumer: StreamConsumer,
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
-        trade_sender: TradeSenderHandle,
+        event_sender: EventSenderHandle,
         db_client: Arc<Client>,
         redis: Redis,
         settings: AppSettings,
@@ -44,7 +45,7 @@ impl OrderManager {
             kafka_consumer,
             scheduler_sender,
             scheduler_receiver,
-            trade_sender,
+            event_sender,
             db_client,
             redis,
             settings,
@@ -108,7 +109,10 @@ impl OrderManager {
         .await
         .context("Failed to save pending trade")?;
 
-        self.trade_sender.send(trade).await.context("Failed to send trade")?;
+        self.event_sender
+            .send(Event::TradeIntent(trade))
+            .await
+            .context("Failed to send trade")?;
         Ok(())
     }
 }

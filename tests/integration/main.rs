@@ -6,8 +6,9 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
 use rust_decimal::Decimal;
 use tracing::info;
-use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, UpdatePolicy};
+use trading_base::{Amount, Identifier, OrderType, PositionIntent, UpdatePolicy};
 
+use order_manager::Event;
 use order_message::*;
 use setup::setup;
 use teardown::teardown;
@@ -31,11 +32,11 @@ async fn send_position(producer: &FutureProducer, intent: &PositionIntent) -> Re
     Ok(())
 }
 
-async fn receive_ti(consumer: &StreamConsumer) -> Result<TradeIntent> {
+async fn receive_event(consumer: &StreamConsumer) -> Result<Event> {
     let msg = consumer.recv().await?;
     let payload = msg.payload().ok_or(anyhow!("Missing payload"))?;
-    let trade_indent: TradeIntent = serde_json::from_slice(payload)?;
-    Ok(trade_indent)
+    let event: Event = serde_json::from_slice(payload)?;
+    Ok(event)
 }
 
 /// An initial position intent leads to an trade intent for the full size of the
@@ -46,10 +47,16 @@ async fn test_1(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
         &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0))).build()?,
     )
     .await?;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
 
-    let trade_indent = receive_ti(&consumer).await?;
-    assert_eq!(trade_indent.qty, 100);
-    let client_order_id = trade_indent.id;
+    assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
+    assert_eq!(trade_intent.qty, 100);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -74,9 +81,15 @@ async fn test_2(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
         &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(150, 0))).build()?,
     )
     .await?;
-    let trade_indent = receive_ti(&consumer).await?;
-    assert_eq!(trade_indent.qty, 50);
-    let client_order_id = trade_indent.id;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(Decimal::new(50, 0)));
+    assert_eq!(trade_intent.qty, 50);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -99,9 +112,15 @@ async fn test_3(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
         &PositionIntent::builder("S1", "AAPL", Amount::Shares(-Decimal::new(100, 0))).build()?,
     )
     .await?;
-    let trade_indent = receive_ti(&consumer).await?;
-    assert_eq!(trade_indent.qty, -150);
-    let client_order_id = trade_indent.id;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(-Decimal::new(250, 0)));
+    assert_eq!(trade_intent.qty, -150);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -116,9 +135,14 @@ async fn test_3(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     };
     send_order_message(&producer, &fill_message).await?;
 
-    let trade_indent = receive_ti(&consumer).await?;
-    assert_eq!(trade_indent.qty, -100);
-    let client_order_id = trade_indent.id;
+    let event = receive_event(&consumer).await?;
+    let trade_intent = match event {
+        Event::TradeIntent(ti) => ti,
+        _ => return Err(anyhow!("Unexpected event")),
+    };
+
+    assert_eq!(trade_intent.qty, -100);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -142,9 +166,15 @@ async fn test_4(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     )
     .await?;
 
-    let trade_indent = receive_ti(&consumer).await?;
-    assert_eq!(trade_indent.qty, -1);
-    let client_order_id = trade_indent.id;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(-Decimal::new(5, 1)));
+    assert_eq!(trade_intent.qty, -1);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -165,9 +195,15 @@ async fn test_4(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
 async fn test_5(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<()> {
     send_position(&producer, &PositionIntent::builder("S1", "AAPL", Amount::Zero).build()?).await?;
 
-    let trade_indent = receive_ti(&consumer).await?;
-    assert_eq!(trade_indent.qty, 101);
-    let client_order_id = trade_indent.id;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(Decimal::new(1005, 1)));
+    assert_eq!(trade_intent.qty, 101);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -194,15 +230,21 @@ async fn test_6(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     )
     .await?;
 
-    let trade_indent = receive_ti(&consumer).await?;
-    assert_eq!(trade_indent.qty, 100);
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Dollars(Decimal::new(10000, 0)));
+    assert_eq!(trade_intent.qty, 100);
     assert_eq!(
-        trade_indent.order_type,
+        trade_intent.order_type,
         OrderType::Limit {
             limit_price: Decimal::new(100, 0)
         }
     );
-    let client_order_id = trade_indent.id;
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -251,9 +293,15 @@ async fn test_7(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     .await
     .unwrap();
 
-    let trade_indent = receive_ti(&consumer).await.unwrap();
-    assert_eq!(trade_indent.qty, -100);
-    let client_order_id = trade_indent.id;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(-Decimal::ONE_HUNDRED));
+    assert_eq!(trade_intent.qty, -100);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -293,9 +341,15 @@ async fn test_9(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     )
     .await?;
 
-    let trade_indent = receive_ti(&consumer).await.unwrap();
-    assert_eq!(trade_indent.qty, 100);
-    let client_order_id = trade_indent.id;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
+    assert_eq!(trade_intent.qty, 100);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -319,16 +373,25 @@ async fn test_10(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
     )
     .await?;
 
-    let _trade_indent = receive_ti(&consumer).await.unwrap();
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, _trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
     info!("SLEEPING 1 SECOND TO LET UNREPORTED TRADE EXPIRE");
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     let record = FutureRecord::to("time")
         .key("")
         .payload(r#"{"state":"open","next_close":710}"#);
     producer.send_result(record).map_err(|x| x.0)?.await?.map_err(|x| x.0)?;
-    let trade_indent = receive_ti(&consumer).await.unwrap();
-    assert_eq!(trade_indent.qty, 100);
-    let client_order_id = trade_indent.id;
+    let event = receive_event(&consumer).await?;
+    let trade_intent = match event {
+        Event::TradeIntent(ti) => ti,
+        _ => return Err(anyhow!("Unexpected event")),
+    };
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -352,9 +415,15 @@ async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
     )
     .await?;
 
-    let trade_indent = receive_ti(&consumer).await.unwrap();
-    assert_eq!(trade_indent.qty, -200);
-    let client_order_id = trade_indent.id;
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    let (claim, trade_intent) = match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => (c, ti),
+        (Event::TradeIntent(ti), Event::Claim(c)) => (c, ti),
+        _ => return Err(anyhow!("Unexpected events")),
+    };
+    assert_eq!(claim.amount, Amount::Shares(-Decimal::new(200, 0)));
+    assert_eq!(trade_intent.qty, -200);
+    let client_order_id = trade_intent.id;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -383,16 +452,27 @@ async fn main() -> Result<()> {
         .payload(r#"{"state":"open","next_close":710}"#);
     producer.send_result(record).unwrap().await.unwrap().unwrap();
 
+    info!("TEST 1");
     test_1(&producer, &consumer).await.unwrap();
+    info!("TEST 2");
     test_2(&producer, &consumer).await.unwrap();
+    info!("TEST 3");
     test_3(&producer, &consumer).await.unwrap();
+    info!("TEST 4");
     test_4(&producer, &consumer).await.unwrap();
+    info!("TEST 5");
     test_5(&producer, &consumer).await.unwrap();
+    info!("TEST 6");
     test_6(&producer, &consumer).await.unwrap();
+    info!("TEST 7");
     test_7(&producer, &consumer).await.unwrap();
+    info!("TEST 8");
     test_8(&producer, &consumer).await.unwrap();
+    info!("TEST 9");
     test_9(&producer, &consumer).await.unwrap();
+    info!("TEST 10");
     test_10(&producer, &consumer).await.unwrap();
+    info!("TEST 11");
     test_11(&producer, &consumer).await.unwrap();
 
     teardown(&admin, &admin_options).await;
