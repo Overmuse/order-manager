@@ -57,7 +57,9 @@ pub async fn setup() -> (
         .unwrap();
 
     debug!("Subscribing to topics");
-    consumer.subscribe(&[&"claims", &"trade-intents"]).unwrap();
+    consumer
+        .subscribe(&[&"allocations", &"claims", &"lots", &"trade-intents"])
+        .unwrap();
     consumer
         .subscription()
         .unwrap()
