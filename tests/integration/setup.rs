@@ -31,6 +31,9 @@ pub async fn setup() -> (
     admin
         .create_topics(
             &[
+                NewTopic::new("allocations", 1, TopicReplication::Fixed(1)),
+                NewTopic::new("claims", 1, TopicReplication::Fixed(1)),
+                NewTopic::new("lots", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("overmuse-trades", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("position-intents", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("trade-intents", 1, TopicReplication::Fixed(1)),
@@ -54,7 +57,9 @@ pub async fn setup() -> (
         .unwrap();
 
     debug!("Subscribing to topics");
-    consumer.subscribe(&[&"trade-intents"]).unwrap();
+    consumer
+        .subscribe(&[&"allocations", &"claims", &"lots", &"trade-intents"])
+        .unwrap();
     consumer
         .subscription()
         .unwrap()

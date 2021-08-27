@@ -1,7 +1,8 @@
 use super::OrderManager;
 use crate::db;
+use crate::event_sender::Event;
 use crate::types::{split_lot, Allocation, Lot, Status};
-use alpaca::{Event, OrderEvent, Side};
+use alpaca::{Event as AlpacaEvent, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::*;
@@ -26,16 +27,16 @@ impl OrderManager {
         };
         debug!(status = ?event.event, "Order status update");
         match event.event {
-            Event::New => {
+            AlpacaEvent::New => {
                 db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Accepted).await?;
             }
-            Event::Canceled { .. } | Event::Expired { .. } | Event::Rejected { .. } => {
+            AlpacaEvent::Canceled { .. } | AlpacaEvent::Expired { .. } | AlpacaEvent::Rejected { .. } => {
                 db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Dead).await?;
                 db::delete_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to delete pending trade")?;
             }
-            Event::Fill { timestamp, .. } => {
+            AlpacaEvent::Fill { timestamp, .. } => {
                 debug!("Order filled");
                 db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Filled).await?;
                 let new_lot = self
@@ -50,6 +51,7 @@ impl OrderManager {
                 db::save_lot(self.db_client.as_ref(), &new_lot)
                     .await
                     .context("Failed to save lot")?;
+                self.event_sender.send(Event::Lot(new_lot.clone())).await?;
                 debug!("Assigning lot");
                 self.assign_lot(new_lot).await.context("Failed to assign lot")?;
                 debug!("Triggering dependent trades");
@@ -57,7 +59,7 @@ impl OrderManager {
                     .await
                     .context("Failed to trigger dependent-trades")?
             }
-            Event::PartialFill { timestamp, .. } => {
+            AlpacaEvent::PartialFill { timestamp, .. } => {
                 db::update_pending_trade_status(self.db_client.as_ref(), id, Status::PartiallyFilled).await?;
                 let pending_trade = db::get_pending_trade_by_id(self.db_client.as_ref(), id)
                     .await
@@ -88,6 +90,7 @@ impl OrderManager {
                 db::save_lot(self.db_client.as_ref(), &new_lot)
                     .await
                     .context("Failed to make lot")?;
+                self.event_sender.send(Event::Lot(new_lot.clone())).await?;
                 self.assign_lot(new_lot).await.context("Failed to assign lot")?;
             }
             _ => (),
@@ -124,6 +127,7 @@ impl OrderManager {
             db::save_allocation(self.db_client.as_ref(), &allocation)
                 .await
                 .context("Failed to save allocation")?;
+            self.event_sender.send(Event::Allocation(allocation)).await?;
         }
         Ok(())
     }
@@ -162,6 +166,8 @@ fn aggregate_previous_lots(lots: &[Lot]) -> (Decimal, Decimal) {
     })
 }
 
+/// Calculates the incremental lot quantity and price given an old cumulative share count and fill
+/// price and new ones.
 fn calculate_lot_quantity_and_price(
     old_quantity: Decimal,
     old_price: Decimal,

@@ -1,5 +1,6 @@
 use super::OrderManager;
 use crate::db;
+use crate::event_sender::Event;
 use crate::types::{Claim, Owner, Position};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -84,6 +85,7 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
+            self.event_sender.send(Event::Claim(claim.clone())).await?;
             self.generate_trades(ticker, &claim.amount, intent.limit_price, intent.stop_price)
                 .await?;
         }
@@ -196,6 +198,7 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
+            self.event_sender.send(Event::Claim(claim)).await?;
         };
         self.send_trade(trade_intent).await
     }

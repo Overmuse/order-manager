@@ -6,18 +6,19 @@ use tokio_postgres::{connect, NoTls};
 use tracing::error;
 
 mod db;
+mod event_sender;
 mod intent_scheduler;
 pub mod order_manager;
 mod redis;
 mod settings;
-mod trade_sender;
 pub mod types;
 mod webserver;
 
 use crate::order_manager::OrderManager;
+pub use event_sender::Event;
+use event_sender::EventSenderHandle;
 use intent_scheduler::IntentScheduler;
 pub use settings::Settings;
-use trade_sender::TradeSenderHandle;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -29,7 +30,7 @@ pub async fn run(settings: Settings) -> Result<()> {
     let producer = producer(&settings.kafka).context("Failed to create kafka producer")?;
     let (scheduled_intents_tx1, scheduled_intents_rx1) = unbounded_channel();
     let (scheduled_intents_tx2, scheduled_intents_rx2) = unbounded_channel();
-    let trade_sender_handle = TradeSenderHandle::new(producer);
+    let event_sender_handle = EventSenderHandle::new(producer);
     let intent_scheduler = IntentScheduler::new(scheduled_intents_tx1, scheduled_intents_rx2);
     let (mut client, connection) =
         connect(&format!("{}/{}", settings.database.url, settings.database.name,), NoTls).await?;
@@ -45,7 +46,7 @@ pub async fn run(settings: Settings) -> Result<()> {
         consumer,
         scheduled_intents_tx2,
         scheduled_intents_rx1,
-        trade_sender_handle,
+        event_sender_handle,
         client.clone(),
         redis,
         settings.app,
