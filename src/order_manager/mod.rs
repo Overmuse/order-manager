@@ -73,7 +73,6 @@ impl OrderManager {
             .context("Failed to get scheduled intents")?;
         for intent in scheduled_intents {
             self.schedule_position_intent(intent)
-                .await
                 .context("Failed to schedule position intent")?
         }
         Ok(())

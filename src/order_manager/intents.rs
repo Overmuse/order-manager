@@ -43,7 +43,10 @@ impl OrderManager {
         } else if !intent.is_active() {
             // Not ready to transmit intent yet
             debug!("Sending intent to scheduler");
-            self.schedule_position_intent(intent).await
+            db::save_scheduled_intent(self.db_client.as_ref(), &intent)
+                .await
+                .context("Failed to save scheduled intent")?;
+            self.schedule_position_intent(intent)
         } else {
             debug!("Evaluating intent");
             self.evaluate_intent(intent).await
@@ -51,10 +54,7 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent))]
-    pub async fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
-        db::save_scheduled_intent(self.db_client.as_ref(), &intent)
-            .await
-            .context("Failed to save scheduled intent")?;
+    pub fn schedule_position_intent(&self, intent: PositionIntent) -> Result<()> {
         self.scheduler_sender
             .send(intent)
             .context("Failed to send intent to scheduler")
