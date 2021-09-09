@@ -8,6 +8,7 @@ use num_traits::Signed;
 use rust_decimal::prelude::*;
 use tracing::{debug, trace, warn};
 use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, UpdatePolicy};
+use uuid::Uuid;
 
 pub(crate) trait PositionIntentExt {
     fn is_expired(&self) -> bool;
@@ -86,8 +87,14 @@ impl OrderManager {
                 .await
                 .context("Failed to save claim")?;
             self.event_sender.send(Event::Claim(claim.clone())).await?;
-            self.generate_trades(ticker, &claim.amount, intent.limit_price, intent.stop_price)
-                .await?;
+            self.generate_trades(
+                ticker,
+                &claim.amount,
+                intent.limit_price,
+                intent.stop_price,
+                Some(claim.id),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -99,6 +106,7 @@ impl OrderManager {
         amount: &Amount,
         limit_price: Option<Decimal>,
         stop_price: Option<Decimal>,
+        claim_id: Option<Uuid>,
     ) -> Result<()> {
         let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
         let diff_shares = match amount {
@@ -143,7 +151,7 @@ impl OrderManager {
                 .context("Failed to save dependent trade")?;
         }
 
-        self.send_trade(sent).await?;
+        self.send_trade(sent, claim_id).await?;
         Ok(())
     }
 
@@ -187,6 +195,7 @@ impl OrderManager {
     #[tracing::instrument(skip(self, position), fields(position.ticker))]
     pub async fn close_position(&self, position: Position) -> Result<()> {
         let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None)?;
+        let mut claim_id = None;
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
             let claim = Claim::new(
                 strategy,
@@ -198,9 +207,10 @@ impl OrderManager {
             db::save_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
+            claim_id = Some(claim.id);
             self.event_sender.send(Event::Claim(claim)).await?;
         };
-        self.send_trade(trade_intent).await
+        self.send_trade(trade_intent, claim_id).await
     }
 
     #[tracing::instrument(skip(self, intent, ticker, strategy_shares))]
