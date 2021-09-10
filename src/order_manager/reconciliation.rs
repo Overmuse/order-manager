@@ -23,7 +23,10 @@ impl OrderManager {
                 && trade.status == Status::Unreported
             {
                 warn!(id = %trade.id, "Deleting unreported trade");
-                db::delete_pending_trade_by_id(self.db_client.as_ref(), trade.id).await?
+                db::delete_pending_trade_by_id(self.db_client.as_ref(), trade.id).await?;
+                if let Some(claim_id) = trade.claim_id {
+                    db::delete_claim_by_id(self.db_client.as_ref(), claim_id).await?;
+                }
             }
         }
         Ok(())
@@ -40,7 +43,7 @@ impl OrderManager {
 
             if pending_trade_amount == 0 {
                 debug!("Unfilled claim, sending new trade");
-                self.generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None)
+                self.generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None, Some(claim.id))
                     .await?;
             }
         }
@@ -57,8 +60,14 @@ impl OrderManager {
                 let mut shares_to_liquidate = (position.shares.abs() - Decimal::from_f64(0.99).unwrap())
                     .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
-                self.generate_trades(&position.ticker, &Amount::Shares(-shares_to_liquidate), None, None)
-                    .await?
+                self.generate_trades(
+                    &position.ticker,
+                    &Amount::Shares(-shares_to_liquidate),
+                    None,
+                    None,
+                    None,
+                )
+                .await?
             }
         }
         Ok(())
