@@ -30,6 +30,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpaca"
+version = "0.10.1"
+source = "git+ssh://git@github.com/Overmuse/alpaca.git?tag=v0.10.1#9b8a8d5119d4a49eabebc2ba6c3942a235c3da0b"
+dependencies = [
+ "chrono",
+ "futures",
+ "reqwest",
+ "rust_decimal",
+ "serde 1.0.127",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.15.0",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "ansi_term"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -641,6 +659,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kafka-settings"
+version = "0.3.3"
+source = "git+ssh://git@github.com/Overmuse/kafka-settings.git?tag=v0.3.3#d1bee351df81ca6fee9984d4fdaa09f2d3ea6aef"
+dependencies = [
+ "rdkafka",
+ "serde 1.0.127",
+ "uuid",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -971,20 +999,21 @@ dependencies = [
 name = "order-manager"
 version = "10.6.3"
 dependencies = [
- "alpaca",
+ "alpaca 0.9.0",
  "anyhow",
  "chrono",
  "config",
  "dotenv",
  "futures",
- "kafka-settings",
+ "kafka-settings 0.3.1",
  "mobc",
  "mobc-redis",
  "num-traits 0.2.14",
- "polygon",
+ "polygon 0.11.0",
  "rdkafka",
  "redis",
  "refinery",
+ "risk-manager",
  "rust_decimal",
  "serde 1.0.127",
  "serde_json",
@@ -1103,6 +1132,24 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite 0.13.0",
+ "tracing",
+]
+
+[[package]]
+name = "polygon"
+version = "0.11.2"
+source = "git+ssh://git@github.com/Overmuse/polygon?tag=v0.11.2#05dcf3b31d7ab371c0def92d35516c92d298a3c1"
+dependencies = [
+ "chrono",
+ "futures",
+ "itertools",
+ "rust_decimal",
+ "serde 1.0.127",
+ "serde_json",
+ "serde_repr",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.15.0",
  "tracing",
 ]
 
@@ -1470,6 +1517,29 @@ dependencies = [
  "untrusted",
  "web-sys",
  "winapi",
+]
+
+[[package]]
+name = "risk-manager"
+version = "0.1.1"
+source = "git+ssh://git@github.com/Overmuse/risk-manager.git?tag=v0.1.1#4e2c8ba3afc37fd617b5ad30b6d9d2c93a574655"
+dependencies = [
+ "alpaca 0.10.1",
+ "anyhow",
+ "chrono",
+ "config",
+ "dotenv",
+ "kafka-settings 0.3.3",
+ "polygon 0.11.2",
+ "rdkafka",
+ "rust_decimal",
+ "serde 1.0.127",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "trading-base",
+ "uuid",
 ]
 
 [[package]]

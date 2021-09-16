@@ -3,6 +3,7 @@ use crate::db;
 use alpaca::AlpacaMessage;
 use anyhow::{anyhow, Result};
 use rdkafka::Message;
+use risk_manager::RiskCheckResponse;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 use trading_base::PositionIntent;
@@ -20,6 +21,7 @@ pub enum State {
 pub enum Input {
     PositionIntent(PositionIntent),
     AlpacaMessage(AlpacaMessage),
+    RiskCheckResponse(RiskCheckResponse),
     Time(State),
 }
 

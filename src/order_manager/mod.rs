@@ -20,6 +20,7 @@ mod input;
 mod intents;
 mod order_updates;
 mod reconciliation;
+mod risk_check;
 use input::Input;
 
 pub struct OrderManager {
@@ -95,6 +96,11 @@ impl OrderManager {
                 self.reconcile().await.context("Failed to reconcile")?;
             }
             Ok(Input::Time(State::Closed { .. })) => {}
+            Ok(Input::RiskCheckResponse(response)) => {
+                self.handle_risk_check_response(response)
+                    .await
+                    .context("Failed to handle RiskCheckResponse")?;
+            }
             Err(e) => return Err(e),
         };
         debug!("Finished handling input");

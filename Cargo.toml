@@ -21,6 +21,7 @@ polygon = { git = "ssh://git@github.com/Overmuse/polygon", tag = "v0.11.0" }
 rdkafka = { version = "0.26", features = ["ssl-vendored"] }
 redis = { version = "0.19.0", features = ["aio", "tokio-comp"] }
 refinery = { version = "0.6", features = ["tokio-postgres"] }
+risk-manager = {git = "ssh://git@github.com/Overmuse/risk-manager.git", tag = "v0.1.1" }
 rust_decimal = { version = "1.14", features = ["tokio-pg"] }
 serde = "1.0"
 serde_json = "1.0"
