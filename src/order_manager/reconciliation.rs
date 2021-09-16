@@ -37,11 +37,10 @@ impl OrderManager {
         let claims = db::get_claims(self.db_client.as_ref()).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
         for claim in claims {
-            let pending_trade_amount = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker)
-                .await?
-                .unwrap_or(0);
+            let pending_trade_amount =
+                db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker).await?;
 
-            if pending_trade_amount == 0 {
+            if pending_trade_amount.is_zero() {
                 debug!("Unfilled claim, sending new trade");
                 self.generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None, Some(claim.id))
                     .await?;

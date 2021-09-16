@@ -1,11 +1,9 @@
 use crate::db;
 use crate::event_sender::Event;
-use crate::order_manager::input::State;
 use crate::redis::Redis;
 use crate::settings::AppSettings;
 use crate::types::PendingTrade;
 use crate::EventSenderHandle;
-use alpaca::AlpacaMessage;
 use anyhow::{Context, Result};
 use rdkafka::consumer::StreamConsumer;
 use std::sync::Arc;
@@ -21,7 +19,6 @@ mod intents;
 mod order_updates;
 mod reconciliation;
 mod risk_check;
-use input::Input;
 
 pub struct OrderManager {
     kafka_consumer: StreamConsumer,
@@ -77,33 +74,6 @@ impl OrderManager {
             self.schedule_position_intent(intent)
                 .context("Failed to schedule position intent")?
         }
-        Ok(())
-    }
-
-    async fn handle_input(&self, input: Result<Input>) -> Result<()> {
-        match input {
-            Ok(Input::PositionIntent(intent)) => self
-                .triage_intent(intent)
-                .await
-                .context("Failed to triage PositionIntent")?,
-            Ok(Input::AlpacaMessage(AlpacaMessage::TradeUpdates(oe))) => self
-                .handle_order_update(oe)
-                .await
-                .context("Failed to handle OrderEvent")?,
-            Ok(Input::AlpacaMessage(_)) => unreachable!(),
-            Ok(Input::Time(State::Open { .. })) => {
-                debug!("Handling time update");
-                self.reconcile().await.context("Failed to reconcile")?;
-            }
-            Ok(Input::Time(State::Closed { .. })) => {}
-            Ok(Input::RiskCheckResponse(response)) => {
-                self.handle_risk_check_response(response)
-                    .await
-                    .context("Failed to handle RiskCheckResponse")?;
-            }
-            Err(e) => return Err(e),
-        };
-        debug!("Finished handling input");
         Ok(())
     }
 

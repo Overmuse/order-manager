@@ -70,47 +70,57 @@ impl OrderManager {
         }
     }
 
+    async fn get_strategy_shares(&self, ticker: &str, strategy: &str, sub_strategy: Option<&str>) -> Result<Decimal> {
+        let maybe_position =
+            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), strategy, sub_strategy, ticker)
+                .await
+                .context("Failed to get positions")?;
+        Ok(maybe_position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO))
+    }
+
     #[tracing::instrument(skip(self, intent))]
     async fn evaluate_single_ticker_intent(&self, intent: &PositionIntent, ticker: &str) -> Result<()> {
-        let maybe_position = db::get_position_by_owner_and_ticker(
-            self.db_client.as_ref(),
-            &Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
-            ticker,
-        )
-        .await
-        .context("Failed to get positions")?;
-        let strategy_shares = maybe_position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO);
-        let maybe_price: Option<f64> = self.redis.get(&format!("price/{}", ticker)).await?;
-        let maybe_price = maybe_price.map(Decimal::from_f64).flatten().or(intent.limit_price);
+        let strategy_shares = self
+            .get_strategy_shares(ticker, &intent.strategy, intent.sub_strategy.as_deref())
+            .await?;
         if !should_position_be_updated(intent, strategy_shares) {
             return Ok(());
         }
+        let maybe_price = self.redis.get_latest_price(ticker).await?.or(intent.limit_price);
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
-        let maybe_claim = diff_amount.map(|amount| {
-            Claim::new(
-                intent.strategy.clone(),
-                intent.sub_strategy.clone(),
-                ticker.to_string(),
-                amount,
-                intent.limit_price,
-            )
-        });
-        if let Some(mut claim) = maybe_claim {
-            self.net_claim(&mut claim).await?;
-            db::save_claim(self.db_client.as_ref(), &claim)
+        match diff_amount {
+            Some(amount) if !amount.is_zero() => {
+                let pending_trade_amount =
+                    db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
+                if !pending_trade_amount.is_zero() {
+                    todo!("Schedule intent")
+                }
+                let mut claim = Claim::new(
+                    intent.strategy.clone(),
+                    intent.sub_strategy.clone(),
+                    ticker.to_string(),
+                    amount,
+                    intent.limit_price,
+                );
+                self.net_claim(&mut claim).await?;
+                db::save_claim(self.db_client.as_ref(), &claim)
+                    .await
+                    .context("Failed to save claim")?;
+                self.event_sender.send(Event::Claim(claim.clone())).await?;
+                self.generate_trades(
+                    ticker,
+                    &claim.amount,
+                    intent.limit_price,
+                    intent.stop_price,
+                    Some(claim.id),
+                )
                 .await
-                .context("Failed to save claim")?;
-            self.event_sender.send(Event::Claim(claim.clone())).await?;
-            self.generate_trades(
-                ticker,
-                &claim.amount,
-                intent.limit_price,
-                intent.stop_price,
-                Some(claim.id),
-            )
-            .await?;
+            }
+            _ => {
+                trace!("No trade generated");
+                Ok(())
+            }
         }
-        Ok(())
     }
 
     #[tracing::instrument(skip(self))]
@@ -146,7 +156,6 @@ impl OrderManager {
         let pending_shares: Decimal = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
             .await
             .context("Failed to get pending trade amount")?
-            .unwrap_or(0)
             .into();
         let owned_shares: Decimal = positions.iter().map(|pos| pos.shares).sum();
 
@@ -227,7 +236,7 @@ impl OrderManager {
 
     async fn net_claim(&self, claim: &mut Claim) -> Result<()> {
         let _maybe_house_position =
-            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), &Owner::House, &claim.ticker).await?;
+            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), "House", None, &claim.ticker).await?;
         // TODO: Actually net the claim
 
         Ok(())
