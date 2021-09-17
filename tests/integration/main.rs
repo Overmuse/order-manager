@@ -4,6 +4,7 @@ use futures::FutureExt;
 use rdkafka::consumer::StreamConsumer;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::Message;
+use risk_manager::RiskCheckResponse;
 use rust_decimal::Decimal;
 use tracing::info;
 use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, UpdatePolicy};
@@ -115,6 +116,16 @@ async fn receive_lot_allocation_and_house_allocation(
     }
 }
 
+async fn send_risk_check_response(producer: &FutureProducer, response: &RiskCheckResponse) -> Result<()> {
+    let payload = serde_json::to_string(response)?;
+    let record = FutureRecord::to("risk-check-response").key("").payload(&payload);
+    producer
+        .send(record, std::time::Duration::from_secs(0))
+        .await
+        .map_err(|(e, _)| e)?;
+    Ok(())
+}
+
 /// An initial position intent leads to an trade intent for the full size of the
 /// position intent.
 async fn test_1(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<()> {
@@ -127,6 +138,9 @@ async fn test_1(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
     assert_eq!(trade_intent.qty, 100);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -160,6 +174,9 @@ async fn test_2(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     assert_eq!(claim.amount, Amount::Shares(Decimal::new(50, 0)));
     assert_eq!(trade_intent.qty, 50);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -191,6 +208,9 @@ async fn test_3(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     assert_eq!(claim.amount, Amount::Shares(-Decimal::new(250, 0)));
     assert_eq!(trade_intent.qty, -150);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -249,6 +269,9 @@ async fn test_4(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     assert_eq!(claim.amount, Amount::Shares(-Decimal::new(5, 1)));
     assert_eq!(trade_intent.qty, -1);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -279,6 +302,9 @@ async fn test_5(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     assert_eq!(claim.amount, Amount::Shares(Decimal::new(1005, 1)));
     assert_eq!(trade_intent.qty, 101);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -321,6 +347,9 @@ async fn test_6(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
         }
     );
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -372,6 +401,9 @@ async fn test_7(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     assert_eq!(claim.amount, Amount::Shares(-Decimal::ONE_HUNDRED));
     assert_eq!(trade_intent.qty, -100);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -420,6 +452,9 @@ async fn test_9(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
     assert_eq!(trade_intent.qty, 100);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
@@ -494,6 +529,9 @@ async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
     assert_eq!(claim.amount, Amount::Shares(-Decimal::new(100, 0)));
     assert_eq!(trade_intent.qty, -100);
     let client_order_id = trade_intent.id;
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,
