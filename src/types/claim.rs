@@ -78,3 +78,21 @@ pub fn calculate_claim_amount(
         Amount::Zero => Some(Amount::Shares(-strategy_shares)),
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_calculate_claim_amount() {
+        let shares = calculate_claim_amount(&Amount::Shares(Decimal::TWO), Decimal::ONE, None);
+        let dollars = calculate_claim_amount(&Amount::Dollars(Decimal::TWO), Decimal::ONE, Some(Decimal::ONE));
+        let dollars_no_price = calculate_claim_amount(&Amount::Dollars(Decimal::TWO), Decimal::ONE, None);
+        let zero = calculate_claim_amount(&Amount::Zero, Decimal::ONE, None);
+
+        assert_eq!(shares, Some(Amount::Shares(Decimal::ONE)));
+        assert_eq!(dollars, Some(Amount::Dollars(Decimal::ONE)));
+        assert_eq!(dollars_no_price, None);
+        assert_eq!(zero, Some(Amount::Shares(-Decimal::ONE)));
+    }
+}

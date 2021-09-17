@@ -35,16 +35,39 @@ async fn send_position(producer: &FutureProducer, intent: &PositionIntent) -> Re
 
 async fn receive_event(consumer: &StreamConsumer) -> Result<Event> {
     let msg = consumer.recv().await?;
+    let topic = msg.topic();
     let payload = msg.payload().ok_or(anyhow!("Missing payload"))?;
-    let event: Event = serde_json::from_slice(payload)?;
+    let event = match topic {
+        "allocations" => {
+            let allocation: Allocation = serde_json::from_slice(payload)?;
+            Event::Allocation(allocation)
+        }
+        "claims" => {
+            let claim: Claim = serde_json::from_slice(payload)?;
+            Event::Claim(claim)
+        }
+        "lots" => {
+            let lot: Lot = serde_json::from_slice(payload)?;
+            Event::Lot(lot)
+        }
+        "risk-check-request" => {
+            let intent: TradeIntent = serde_json::from_slice(payload)?;
+            Event::RiskCheckRequest(intent)
+        }
+        "trade-intents" => {
+            let intent: TradeIntent = serde_json::from_slice(payload)?;
+            Event::TradeIntent(intent)
+        }
+        _ => unreachable!(),
+    };
     Ok(event)
 }
 
-async fn receive_claim_and_trade_intent(consumer: &StreamConsumer) -> Result<(Claim, TradeIntent)> {
+async fn receive_claim_and_risk_check_request(consumer: &StreamConsumer) -> Result<(Claim, TradeIntent)> {
     let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
     match events {
-        (Event::Claim(c), Event::TradeIntent(ti)) => Ok((c, ti)),
-        (Event::TradeIntent(ti), Event::Claim(c)) => Ok((c, ti)),
+        (Event::Claim(c), Event::RiskCheckRequest(ti)) => Ok((c, ti)),
+        (Event::RiskCheckRequest(ti), Event::Claim(c)) => Ok((c, ti)),
         _ => return Err(anyhow!("Unexpected events")),
     }
 }
@@ -100,7 +123,7 @@ async fn test_1(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
         &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0))).build()?,
     )
     .await?;
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
     assert_eq!(trade_intent.qty, 100);
     let client_order_id = trade_intent.id;
@@ -133,7 +156,7 @@ async fn test_2(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
         &PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(150, 0))).build()?,
     )
     .await?;
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(Decimal::new(50, 0)));
     assert_eq!(trade_intent.qty, 50);
     let client_order_id = trade_intent.id;
@@ -164,7 +187,7 @@ async fn test_3(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
         &PositionIntent::builder("S1", "AAPL", Amount::Shares(-Decimal::new(100, 0))).build()?,
     )
     .await?;
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(-Decimal::new(250, 0)));
     assert_eq!(trade_intent.qty, -150);
     let client_order_id = trade_intent.id;
@@ -222,7 +245,7 @@ async fn test_4(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     )
     .await?;
 
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(-Decimal::new(5, 1)));
     assert_eq!(trade_intent.qty, -1);
     let client_order_id = trade_intent.id;
@@ -252,7 +275,7 @@ async fn test_4(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
 async fn test_5(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<()> {
     send_position(&producer, &PositionIntent::builder("S1", "AAPL", Amount::Zero).build()?).await?;
 
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(Decimal::new(1005, 1)));
     assert_eq!(trade_intent.qty, 101);
     let client_order_id = trade_intent.id;
@@ -288,7 +311,7 @@ async fn test_6(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     )
     .await?;
 
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Dollars(Decimal::new(10000, 0)));
     assert_eq!(trade_intent.qty, 100);
     assert_eq!(
@@ -345,7 +368,7 @@ async fn test_7(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     )
     .await?;
 
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(-Decimal::ONE_HUNDRED));
     assert_eq!(trade_intent.qty, -100);
     let client_order_id = trade_intent.id;
@@ -393,7 +416,7 @@ async fn test_9(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
     )
     .await?;
 
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
     assert_eq!(trade_intent.qty, 100);
     let client_order_id = trade_intent.id;
@@ -425,7 +448,7 @@ async fn test_10(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
     )
     .await?;
 
-    let (claim, _trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, _trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
     info!("SLEEPING 1 SECOND TO LET UNREPORTED TRADE EXPIRE");
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -467,7 +490,7 @@ async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
     )
     .await?;
 
-    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(-Decimal::new(100, 0)));
     assert_eq!(trade_intent.qty, -100);
     let client_order_id = trade_intent.id;

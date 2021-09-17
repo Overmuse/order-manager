@@ -1,5 +1,6 @@
 use crate::db;
 use crate::types::{Owner, Status};
+use crate::Event;
 use crate::OrderManager;
 use anyhow::Result;
 use chrono::{Duration, Utc};
@@ -59,14 +60,18 @@ impl OrderManager {
                 let mut shares_to_liquidate = (position.shares.abs() - Decimal::from_f64(0.99).unwrap())
                     .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
-                self.generate_trades(
-                    &position.ticker,
-                    &Amount::Shares(-shares_to_liquidate),
-                    None,
-                    None,
-                    None,
-                )
-                .await?
+                let maybe_trade = self
+                    .generate_trades(
+                        &position.ticker,
+                        &Amount::Shares(-shares_to_liquidate),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+                if let Some(intent) = maybe_trade {
+                    self.event_sender.send(Event::RiskCheckRequest(intent)).await?
+                }
             }
         }
         Ok(())

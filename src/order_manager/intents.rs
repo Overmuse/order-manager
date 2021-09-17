@@ -50,7 +50,11 @@ impl OrderManager {
             self.schedule_position_intent(intent)
         } else {
             debug!("Evaluating intent");
-            self.evaluate_intent(intent).await
+            let maybe_trade_intent = self.evaluate_intent(intent).await?;
+            if let Some(trade_intent) = maybe_trade_intent {
+                self.event_sender.send(Event::RiskCheckRequest(trade_intent)).await?
+            }
+            Ok(())
         }
     }
 
@@ -62,11 +66,11 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent))]
-    async fn evaluate_intent(&self, intent: PositionIntent) -> Result<()> {
+    async fn evaluate_intent(&self, intent: PositionIntent) -> Result<Option<TradeIntent>> {
         trace!("Evaluating intent");
         match &intent.identifier {
             Identifier::Ticker(ticker) => self.evaluate_single_ticker_intent(&intent, ticker).await,
-            Identifier::All => self.evaluate_multi_ticker_intent(intent).await,
+            Identifier::All => self.evaluate_multi_ticker_intent(intent).await.map(|_| None),
         }
     }
 
@@ -79,12 +83,16 @@ impl OrderManager {
     }
 
     #[tracing::instrument(skip(self, intent))]
-    async fn evaluate_single_ticker_intent(&self, intent: &PositionIntent, ticker: &str) -> Result<()> {
+    async fn evaluate_single_ticker_intent(
+        &self,
+        intent: &PositionIntent,
+        ticker: &str,
+    ) -> Result<Option<TradeIntent>> {
         let strategy_shares = self
             .get_strategy_shares(ticker, &intent.strategy, intent.sub_strategy.as_deref())
             .await?;
         if !should_position_be_updated(intent, strategy_shares) {
-            return Ok(());
+            return Ok(None);
         }
         let maybe_price = self.redis.get_latest_price(ticker).await?.or(intent.limit_price);
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
@@ -118,7 +126,7 @@ impl OrderManager {
             }
             _ => {
                 trace!("No trade generated");
-                Ok(())
+                Ok(None)
             }
         }
     }
@@ -131,7 +139,7 @@ impl OrderManager {
         limit_price: Option<Decimal>,
         stop_price: Option<Decimal>,
         claim_id: Option<Uuid>,
-    ) -> Result<()> {
+    ) -> Result<Option<TradeIntent>> {
         let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
         let diff_shares = match amount {
             Amount::Shares(shares) => *shares,
@@ -147,7 +155,7 @@ impl OrderManager {
                     Some(price) => dollars / price,
                     None => {
                         warn!("Missing price");
-                        return Ok(());
+                        return Ok(None);
                     }
                 }
             }
@@ -173,7 +181,7 @@ impl OrderManager {
                 .context("Failed to save dependent trade")?;
         }
 
-        self.send_trade(sent, claim_id).await
+        Ok(Some(sent))
     }
 
     #[tracing::instrument(skip(self, intent))]
