@@ -1,7 +1,7 @@
 use super::OrderManager;
 use crate::db;
 use crate::event_sender::Event;
-use crate::types::{Claim, Owner, Position};
+use crate::types::{calculate_claim_amount, Claim, Owner, Position};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
@@ -70,33 +70,57 @@ impl OrderManager {
         }
     }
 
+    async fn get_strategy_shares(&self, ticker: &str, strategy: &str, sub_strategy: Option<&str>) -> Result<Decimal> {
+        let maybe_position =
+            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), strategy, sub_strategy, ticker)
+                .await
+                .context("Failed to get positions")?;
+        Ok(maybe_position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO))
+    }
+
     #[tracing::instrument(skip(self, intent))]
     async fn evaluate_single_ticker_intent(&self, intent: &PositionIntent, ticker: &str) -> Result<()> {
-        let maybe_position = db::get_position_by_owner_and_ticker(
-            self.db_client.as_ref(),
-            &Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
-            ticker,
-        )
-        .await
-        .context("Failed to get positions")?;
-        let strategy_shares = maybe_position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO);
-        let maybe_claim = self.make_claim(intent, ticker, strategy_shares).await?;
-        if let Some(mut claim) = maybe_claim {
-            self.net_claim(&mut claim).await?;
-            db::save_claim(self.db_client.as_ref(), &claim)
-                .await
-                .context("Failed to save claim")?;
-            self.event_sender.send(Event::Claim(claim.clone())).await?;
-            self.generate_trades(
-                ticker,
-                &claim.amount,
-                intent.limit_price,
-                intent.stop_price,
-                Some(claim.id),
-            )
+        let strategy_shares = self
+            .get_strategy_shares(ticker, &intent.strategy, intent.sub_strategy.as_deref())
             .await?;
+        if !should_position_be_updated(intent, strategy_shares) {
+            return Ok(());
         }
-        Ok(())
+        let maybe_price = self.redis.get_latest_price(ticker).await?.or(intent.limit_price);
+        let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
+        match diff_amount {
+            Some(amount) if !amount.is_zero() => {
+                let pending_trade_amount =
+                    db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
+                if !pending_trade_amount.is_zero() {
+                    todo!("Schedule intent")
+                }
+                let mut claim = Claim::new(
+                    intent.strategy.clone(),
+                    intent.sub_strategy.clone(),
+                    ticker.to_string(),
+                    amount,
+                    intent.limit_price,
+                );
+                self.net_claim(&mut claim).await?;
+                db::save_claim(self.db_client.as_ref(), &claim)
+                    .await
+                    .context("Failed to save claim")?;
+                self.event_sender.send(Event::Claim(claim.clone())).await?;
+                self.generate_trades(
+                    ticker,
+                    &claim.amount,
+                    intent.limit_price,
+                    intent.stop_price,
+                    Some(claim.id),
+                )
+                .await
+            }
+            _ => {
+                trace!("No trade generated");
+                Ok(())
+            }
+        }
     }
 
     #[tracing::instrument(skip(self))]
@@ -129,18 +153,16 @@ impl OrderManager {
             }
             _ => unreachable!(),
         };
-        let pending_shares = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+        let pending_shares: Decimal = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
             .await
             .context("Failed to get pending trade amount")?
-            .unwrap_or(0)
             .into();
-        let total_shares = positions.iter().map(|pos| pos.shares).sum();
+        let owned_shares: Decimal = positions.iter().map(|pos| pos.shares).sum();
 
-        let (sent, maybe_saved) = self.make_trades(
+        let (sent, maybe_saved) = make_trades(
             ticker,
             diff_shares,
-            total_shares,
-            pending_shares,
+            owned_shares + pending_shares,
             limit_price,
             stop_price,
         )?;
@@ -151,8 +173,7 @@ impl OrderManager {
                 .context("Failed to save dependent trade")?;
         }
 
-        self.send_trade(sent, claim_id).await?;
-        Ok(())
+        self.send_trade(sent, claim_id).await
     }
 
     #[tracing::instrument(skip(self, intent))]
@@ -213,94 +234,58 @@ impl OrderManager {
         self.send_trade(trade_intent, claim_id).await
     }
 
-    #[tracing::instrument(skip(self, intent, ticker, strategy_shares))]
-    async fn make_claim(
-        &self,
-        intent: &PositionIntent,
-        ticker: &str,
-        strategy_shares: Decimal,
-    ) -> Result<Option<Claim>> {
-        match intent.update_policy {
-            UpdatePolicy::Retain => {
-                debug!("UpdatePolicy::Retain: No trading needed");
-                return Ok(None);
-            }
-            UpdatePolicy::RetainLong => {
-                if strategy_shares > Decimal::ZERO {
-                    debug!("UpdatePolicy::RetainLong and existing long position: No trading needed",);
-                    return Ok(None);
-                }
-            }
-            UpdatePolicy::RetainShort => {
-                if strategy_shares < Decimal::ZERO {
-                    debug!("UpdatePolicy::RetainShort and existing short position: No trading needed",);
-                    return Ok(None);
-                }
-            }
-            _ => (),
-        };
-        let diff_amount = match intent.amount {
-            Amount::Dollars(dollars) => {
-                let price: Option<f64> = self.redis.get(&format!("price/{}", ticker)).await?;
-                let price = price.map(Decimal::from_f64).flatten().or(intent.limit_price);
-                match price {
-                    Some(price) => Amount::Dollars(dollars - price * strategy_shares),
-                    None => {
-                        warn!("Missing price");
-                        return Ok(None);
-                    }
-                }
-            }
-            Amount::Shares(shares) => Amount::Shares(shares - strategy_shares),
-            Amount::Zero => Amount::Shares(-strategy_shares),
-        };
-        if diff_amount.is_zero() {
-            debug!("No change in shares: No trading needed");
-            return Ok(None);
-        }
-        let claim = Claim::new(
-            intent.strategy.clone(),
-            intent.sub_strategy.clone(),
-            ticker.to_string(),
-            diff_amount,
-            intent.limit_price,
-        );
-        Ok(Some(claim))
-    }
-
-    #[tracing::instrument(skip(self, ticker, diff_shares, total_shares, pending_shares, limit_price, stop_price))]
-    fn make_trades(
-        &self,
-        ticker: &str,
-        diff_shares: Decimal,
-        total_shares: Decimal,
-        pending_shares: Decimal,
-        limit_price: Option<Decimal>,
-        stop_price: Option<Decimal>,
-    ) -> Result<(TradeIntent, Option<TradeIntent>)> {
-        let signum_product =
-            (total_shares + pending_shares).signum() * (diff_shares + total_shares + pending_shares).signum();
-        if !signum_product.is_sign_negative() {
-            let sent = make_trade_intent(ticker, diff_shares, limit_price, stop_price)?;
-            Ok((sent, None))
-        } else {
-            let sent = make_trade_intent(ticker, -(total_shares + pending_shares), limit_price, stop_price)?;
-            let saved = make_trade_intent(
-                ticker,
-                diff_shares + total_shares + pending_shares,
-                limit_price,
-                stop_price,
-            )?;
-            Ok((sent, Some(saved)))
-        }
-    }
-
     async fn net_claim(&self, claim: &mut Claim) -> Result<()> {
         let _maybe_house_position =
-            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), &Owner::House, &claim.ticker).await?;
+            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), "House", None, &claim.ticker).await?;
         // TODO: Actually net the claim
 
         Ok(())
+    }
+}
+
+#[tracing::instrument(skip(intent, strategy_shares))]
+fn should_position_be_updated(intent: &PositionIntent, strategy_shares: Decimal) -> bool {
+    match intent.update_policy {
+        UpdatePolicy::Retain => {
+            debug!("UpdatePolicy::Retain: No trading needed");
+            false
+        }
+        UpdatePolicy::RetainLong => {
+            if strategy_shares > Decimal::ZERO {
+                debug!("UpdatePolicy::RetainLong and existing long position: No trading needed",);
+                false
+            } else {
+                true
+            }
+        }
+        UpdatePolicy::RetainShort => {
+            if strategy_shares < Decimal::ZERO {
+                debug!("UpdatePolicy::RetainShort and existing short position: No trading needed",);
+                false
+            } else {
+                true
+            }
+        }
+        _ => true,
+    }
+}
+
+#[tracing::instrument(skip(ticker, diff_shares, total_shares, limit_price, stop_price))]
+fn make_trades(
+    ticker: &str,
+    diff_shares: Decimal,
+    total_shares: Decimal,
+    limit_price: Option<Decimal>,
+    stop_price: Option<Decimal>,
+) -> Result<(TradeIntent, Option<TradeIntent>)> {
+    let signum_product = total_shares.signum() * (diff_shares + total_shares).signum();
+    if !signum_product.is_sign_negative() {
+        let sent = make_trade_intent(ticker, diff_shares, limit_price, stop_price)?;
+        Ok((sent, None))
+    } else {
+        let sent = make_trade_intent(ticker, -total_shares, limit_price, stop_price)?;
+        let saved = make_trade_intent(ticker, diff_shares + total_shares, limit_price, stop_price)?;
+        Ok((sent, Some(saved)))
     }
 }
 
@@ -329,4 +314,95 @@ fn make_trade_intent(
     )
     .order_type(order_type);
     Ok(intent)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_should_position_be_updated() {
+        let retain = PositionIntent::builder("Strat", "AAPL", Amount::Shares(Decimal::ONE_HUNDRED))
+            .update_policy(UpdatePolicy::Retain)
+            .build()
+            .unwrap();
+        let retain_long = PositionIntent::builder("Strat", "AAPL", Amount::Shares(Decimal::ONE_HUNDRED))
+            .update_policy(UpdatePolicy::RetainLong)
+            .build()
+            .unwrap();
+        let retain_short = PositionIntent::builder("Strat", "AAPL", Amount::Shares(Decimal::ONE_HUNDRED))
+            .update_policy(UpdatePolicy::RetainShort)
+            .build()
+            .unwrap();
+        let update = PositionIntent::builder("Strat", "AAPL", Amount::Shares(Decimal::ONE_HUNDRED))
+            .update_policy(UpdatePolicy::Update)
+            .build()
+            .unwrap();
+        assert!(!should_position_be_updated(&retain, Decimal::ZERO));
+        assert!(!should_position_be_updated(&retain, Decimal::ONE));
+        assert!(!should_position_be_updated(&retain, -Decimal::ONE));
+        assert!(should_position_be_updated(&retain_long, Decimal::ZERO));
+        assert!(!should_position_be_updated(&retain_long, Decimal::ONE));
+        assert!(should_position_be_updated(&retain_long, -Decimal::ONE));
+        assert!(should_position_be_updated(&retain_short, Decimal::ZERO));
+        assert!(should_position_be_updated(&retain_short, Decimal::ONE));
+        assert!(!should_position_be_updated(&retain_short, -Decimal::ONE));
+        assert!(should_position_be_updated(&update, Decimal::ZERO));
+        assert!(should_position_be_updated(&update, Decimal::ONE));
+        assert!(should_position_be_updated(&update, -Decimal::ONE));
+    }
+
+    #[test]
+    fn test_make_trade_intent() {
+        let market = make_trade_intent("AAPL", Decimal::ONE, None, None).unwrap();
+        let limit = make_trade_intent("AAPL", Decimal::ONE, Some(Decimal::ONE), None).unwrap();
+        let stop = make_trade_intent("AAPL", Decimal::ONE, None, Some(Decimal::ONE)).unwrap();
+        let stop_limit = make_trade_intent("AAPL", Decimal::ONE, Some(Decimal::ONE), Some(Decimal::TWO)).unwrap();
+        assert_eq!(market.order_type, OrderType::Market);
+        assert_eq!(
+            limit.order_type,
+            OrderType::Limit {
+                limit_price: Decimal::ONE
+            }
+        );
+        assert_eq!(
+            stop.order_type,
+            OrderType::Stop {
+                stop_price: Decimal::ONE
+            }
+        );
+        assert_eq!(
+            stop_limit.order_type,
+            OrderType::StopLimit {
+                stop_price: Decimal::TWO,
+                limit_price: Decimal::ONE
+            }
+        );
+    }
+
+    #[test]
+    fn test_trade_intent_rounding() {
+        let small_round_up = make_trade_intent("AAPL", Decimal::new(999, 3), None, None).unwrap();
+        let large_round_up = make_trade_intent("AAPL", Decimal::new(1, 3), None, None).unwrap();
+        let small_round_down = make_trade_intent("AAPL", -Decimal::new(999, 3), None, None).unwrap();
+        let large_round_down = make_trade_intent("AAPL", -Decimal::new(1, 3), None, None).unwrap();
+        assert_eq!(small_round_up.qty, 1);
+        assert_eq!(large_round_up.qty, 1);
+        assert_eq!(small_round_down.qty, -1);
+        assert_eq!(large_round_down.qty, -1);
+    }
+
+    #[test]
+    fn test_make_trades() {
+        // No change in sign leads to one trade
+        let (sent, maybe_saved) = make_trades("AAPL", Decimal::TWO, Decimal::ONE, None, None).unwrap();
+        assert_eq!(sent.qty, 2);
+        assert_eq!(maybe_saved, None);
+
+        // Change in sign leads to two trades
+        let (sent, maybe_saved) = make_trades("AAPL", -Decimal::TWO, Decimal::ONE, None, None).unwrap();
+        assert_eq!(sent.qty, -1);
+        let saved = maybe_saved.unwrap();
+        assert_eq!(saved.qty, -1);
+    }
 }

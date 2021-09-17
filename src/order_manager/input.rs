@@ -1,8 +1,9 @@
 use super::OrderManager;
 use crate::db;
 use alpaca::AlpacaMessage;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use rdkafka::Message;
+use risk_manager::RiskCheckResponse;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 use trading_base::PositionIntent;
@@ -20,6 +21,7 @@ pub enum State {
 pub enum Input {
     PositionIntent(PositionIntent),
     AlpacaMessage(AlpacaMessage),
+    RiskCheckResponse(RiskCheckResponse),
     Time(State),
 }
 
@@ -40,5 +42,32 @@ impl OrderManager {
                 Ok(Input::PositionIntent(intent))
             }
         }
+    }
+
+    pub async fn handle_input(&self, input: Result<Input>) -> Result<()> {
+        match input {
+            Ok(Input::PositionIntent(intent)) => self
+                .triage_intent(intent)
+                .await
+                .context("Failed to triage PositionIntent")?,
+            Ok(Input::AlpacaMessage(AlpacaMessage::TradeUpdates(oe))) => self
+                .handle_order_update(oe)
+                .await
+                .context("Failed to handle OrderEvent")?,
+            Ok(Input::AlpacaMessage(_)) => unreachable!(),
+            Ok(Input::Time(State::Open { .. })) => {
+                debug!("Handling time update");
+                self.reconcile().await.context("Failed to reconcile")?;
+            }
+            Ok(Input::Time(State::Closed { .. })) => {}
+            Ok(Input::RiskCheckResponse(response)) => {
+                self.handle_risk_check_response(response)
+                    .await
+                    .context("Failed to handle RiskCheckResponse")?;
+            }
+            Err(e) => return Err(e),
+        };
+        debug!("Finished handling input");
+        Ok(())
     }
 }

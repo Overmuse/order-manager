@@ -6,19 +6,16 @@ use tracing::trace;
 use uuid::Uuid;
 
 #[tracing::instrument(skip(client, ticker))]
-pub async fn get_pending_trade_amount_by_ticker<T: GenericClient>(
-    client: &T,
-    ticker: &str,
-) -> Result<Option<i32>, Error> {
+pub async fn get_pending_trade_amount_by_ticker<T: GenericClient>(client: &T, ticker: &str) -> Result<i32, Error> {
     trace!(ticker, "Fetching pending trade amount for ticker");
-    client
+    Ok(client
         .query_opt(
             "SELECT pending_quantity FROM pending_trades WHERE ticker = $1",
             &[&ticker],
         )
         .await?
-        .map(|row| row.try_get(0))
-        .transpose()
+        .map(|row| row.get(0))
+        .unwrap_or(0))
 }
 
 #[tracing::instrument(skip(client))]

@@ -32,17 +32,14 @@ pub async fn get_positions_by_ticker<T: GenericClient>(client: &T, ticker: &str)
             .collect()
 }
 
-#[tracing::instrument(skip(client, owner, ticker))]
+#[tracing::instrument(skip(client, owner, sub_owner, ticker))]
 pub async fn get_position_by_owner_and_ticker<T: GenericClient>(
     client: &T,
-    owner: &Owner,
+    owner: &str,
+    sub_owner: Option<&str>,
     ticker: &str,
 ) -> Result<Option<Position>, Error> {
     trace!(%owner, ticker, "Fetching positions for owner and ticker");
-    let (owner, sub_owner) = match owner {
-        Owner::House => ("House", None),
-        Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
-    };
     let res = match sub_owner {
         Some(sub_owner) => {
             client.query_opt("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 AND sub_owner = $2 AND ticker = $3 GROUP BY owner, sub_owner, ticker", &[&owner, &sub_owner, &ticker]).await?

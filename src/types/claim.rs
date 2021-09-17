@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use tokio_postgres::Row;
-use tracing::trace;
+use tracing::{trace, warn};
 use trading_base::Amount;
 use uuid::Uuid;
 
@@ -57,5 +57,24 @@ fn unite_amount_spec(amount: Decimal, unit: &str) -> Amount {
         "shares" => Amount::Shares(amount),
         "zero" => Amount::Zero,
         _ => unreachable!(),
+    }
+}
+#[tracing::instrument(skip(intent_amount, strategy_shares, maybe_price))]
+
+pub fn calculate_claim_amount(
+    intent_amount: &Amount,
+    strategy_shares: Decimal,
+    maybe_price: Option<Decimal>,
+) -> Option<Amount> {
+    match intent_amount {
+        Amount::Dollars(dollars) => match maybe_price {
+            Some(price) => Some(Amount::Dollars(dollars - price * strategy_shares)),
+            None => {
+                warn!("Missing price");
+                None
+            }
+        },
+        Amount::Shares(shares) => Some(Amount::Shares(shares - strategy_shares)),
+        Amount::Zero => Some(Amount::Shares(-strategy_shares)),
     }
 }

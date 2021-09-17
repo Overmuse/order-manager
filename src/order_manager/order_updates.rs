@@ -138,22 +138,26 @@ impl OrderManager {
             let claim = db::get_claim_by_id(self.db_client.as_ref(), claim_id)
                 .await
                 .context("Failed to get claim")?;
-            let amount = match claim.amount {
-                Amount::Dollars(dollars) => {
-                    let new_dollars = dollars - allocation.basis;
-                    Amount::Dollars(new_dollars)
-                }
-                Amount::Shares(shares) => {
-                    let new_shares = shares - allocation.shares;
-                    Amount::Shares(new_shares)
-                }
-                _ => unimplemented!(),
-            };
+            let amount = calculate_claim_adjustment_amount(&claim.amount, allocation);
             db::update_claim_amount(self.db_client.as_ref(), claim_id, &amount)
                 .await
                 .context("Failed to update claim amount")?;
         };
         Ok(())
+    }
+}
+
+fn calculate_claim_adjustment_amount(claim_amount: &Amount, allocation: &Allocation) -> Amount {
+    match claim_amount {
+        Amount::Dollars(dollars) => {
+            let new_dollars = dollars - allocation.basis;
+            Amount::Dollars(new_dollars)
+        }
+        Amount::Shares(shares) => {
+            let new_shares = shares - allocation.shares;
+            Amount::Shares(new_shares)
+        }
+        _ => unimplemented!(),
     }
 }
 
