@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use once_cell::sync::Lazy;
 use order_manager::settings::{DatabaseSettings, Settings};
 use order_manager::types::{Allocation, Claim, Lot, Owner};
 use order_manager::{run, Event};
@@ -13,9 +14,20 @@ use rdkafka::{
 use risk_manager::RiskCheckResponse;
 use serde::Serialize;
 use tokio_postgres::{connect, Client, NoTls};
+use tracing::subscriber::set_global_default;
 use tracing::{debug, error};
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use trading_base::{Identifier, PositionIntent, TradeIntent};
 use uuid::Uuid;
+
+static TRACING: Lazy<()> = Lazy::new(|| {
+    if std::env::var("RUST_LOG").is_ok() {
+        let subscriber = FmtSubscriber::builder()
+            .with_env_filter(EnvFilter::from_default_env())
+            .finish();
+        set_global_default(subscriber).unwrap();
+    }
+});
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -224,6 +236,7 @@ impl TestApp {
 }
 
 pub async fn spawn_app() -> TestApp {
+    Lazy::force(&TRACING);
     let test_id = Uuid::new_v4().to_simple().to_string();
     tracing::info!("TEST ID: {}", test_id);
     let database_address = "postgres://postgres:password@localhost:5432";

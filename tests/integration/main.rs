@@ -1,9 +1,6 @@
 use anyhow::Result;
 use risk_manager::RiskCheckResponse;
 use rust_decimal::Decimal;
-use tracing::info;
-use tracing::subscriber::set_global_default;
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use trading_base::{Amount, PositionIntent};
 
 use helpers::*;
@@ -12,7 +9,8 @@ mod helpers;
 
 /// An initial position intent leads to an trade intent for the full size of the
 /// position intent.
-async fn test_1() -> Result<()> {
+#[tokio::test]
+async fn one_position_intent_leads_to_one_trade() -> Result<()> {
     let app = spawn_app().await;
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     app.send_position(&PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0))).build()?)
@@ -422,46 +420,3 @@ async fn test_1() -> Result<()> {
 //     //assert_eq!(allocation.owner, Owner::Strategy("S2".into(), None));
 //     Ok(())
 // }
-
-#[tokio::test]
-async fn main() -> Result<()> {
-    // let (admin, admin_options, consumer, producer) = setup().await;
-    // TODO: Replace this sleep with a liveness check
-
-    // // Send initial time record in order to clean up pending trades
-    // let record = FutureRecord::to("time")
-    //     .key("")
-    //     .payload(r#"{"state":"open","next_close":710}"#);
-    // producer.send_result(record).map_err(|x| x.0)?.await?.map_err(|x| x.0)?;
-
-    let subscriber = FmtSubscriber::builder()
-        .with_env_filter(EnvFilter::from_default_env())
-        .finish();
-    set_global_default(subscriber).unwrap();
-
-    info!("TEST 1");
-    test_1().await?;
-    // info!("TEST 2");
-    // test_2(&producer, &consumer).await?;
-    // info!("TEST 3");
-    // test_3(&producer, &consumer).await?;
-    // info!("TEST 4");
-    // test_4(&producer, &consumer).await?;
-    // info!("TEST 5");
-    // test_5(&producer, &consumer).await?;
-    // info!("TEST 6");
-    // test_6(&producer, &consumer).await?;
-    // info!("TEST 7");
-    // test_7(&producer, &consumer).await?;
-    // info!("TEST 8");
-    // test_8(&producer, &consumer).await?;
-    // info!("TEST 9");
-    // test_9(&producer, &consumer).await?;
-    // info!("TEST 10");
-    // test_10(&producer, &consumer).await?;
-    // info!("TEST 11");
-    // test_11(&producer, &consumer).await?;
-
-    // teardown(&admin, &admin_options).await;
-    Ok(())
-}

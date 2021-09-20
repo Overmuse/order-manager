@@ -1009,6 +1009,7 @@ dependencies = [
  "mobc",
  "mobc-redis",
  "num-traits 0.2.14",
+ "once_cell",
  "polygon 0.11.0",
  "rdkafka",
  "redis",
