@@ -1,3 +1,4 @@
+use crate::settings::AppSettings;
 use crate::types::{Allocation, Claim, Lot};
 use anyhow::Result;
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -8,6 +9,7 @@ use tracing::{error, info};
 use trading_base::TradeIntent;
 
 struct EventSender {
+    settings: AppSettings,
     producer: FutureProducer,
     receiver: mpsc::Receiver<Event>,
 }
@@ -23,8 +25,12 @@ pub enum Event {
 }
 
 impl EventSender {
-    fn new(producer: FutureProducer, receiver: mpsc::Receiver<Event>) -> Self {
-        Self { producer, receiver }
+    fn new(settings: AppSettings, producer: FutureProducer, receiver: mpsc::Receiver<Event>) -> Self {
+        Self {
+            settings,
+            producer,
+            receiver,
+        }
     }
 
     #[tracing::instrument(skip(self))]
@@ -38,11 +44,11 @@ impl EventSender {
             }
             let payload = payload.unwrap();
             let (topic, key) = match event {
-                Event::TradeIntent(ti) => ("trade-intents", ti.ticker),
-                Event::Allocation(alloc) => ("allocations", alloc.ticker),
-                Event::Claim(claim) => ("claims", claim.ticker),
-                Event::Lot(lot) => ("lots", lot.ticker),
-                Event::RiskCheckRequest(intent) => ("risk-check-request", intent.ticker),
+                Event::TradeIntent(ti) => (self.settings.topics.trade.as_str(), ti.ticker),
+                Event::Allocation(alloc) => (self.settings.topics.allocation.as_str(), alloc.ticker),
+                Event::Claim(claim) => (self.settings.topics.claim.as_str(), claim.ticker),
+                Event::Lot(lot) => (self.settings.topics.lot.as_str(), lot.ticker),
+                Event::RiskCheckRequest(ti) => (self.settings.topics.risk.as_str(), ti.ticker),
             };
             let record = FutureRecord::to(topic).key(&key).payload(&payload);
             let send = self.producer.send(record, Duration::from_secs(0)).await;
@@ -59,9 +65,9 @@ pub struct EventSenderHandle {
 }
 
 impl EventSenderHandle {
-    pub fn new(producer: FutureProducer) -> Self {
+    pub fn new(settings: AppSettings, producer: FutureProducer) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = EventSender::new(producer, receiver);
+        let mut actor = EventSender::new(settings, producer, receiver);
         tokio::spawn(async move { actor.run().await });
         Self { sender }
     }

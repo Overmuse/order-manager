@@ -2,13 +2,23 @@ use config::{Config, ConfigError, Environment};
 use kafka_settings::KafkaSettings;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
+pub struct TopicSettings {
+    pub allocation: String,
+    pub claim: String,
+    pub lot: String,
+    pub risk: String,
+    pub trade: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct AppSettings {
+    pub topics: TopicSettings,
     pub unreported_trade_expiry_seconds: usize,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Database {
+pub struct DatabaseSettings {
     pub url: String,
     pub name: String,
 }
@@ -26,7 +36,7 @@ pub struct WebServerSettings {
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub app: AppSettings,
-    pub database: Database,
+    pub database: DatabaseSettings,
     pub kafka: KafkaSettings,
     pub redis: RedisSettings,
     pub webserver: WebServerSettings,

@@ -10,7 +10,7 @@ mod event_sender;
 mod intent_scheduler;
 pub mod order_manager;
 mod redis;
-mod settings;
+pub mod settings;
 pub mod types;
 mod webserver;
 
@@ -30,7 +30,7 @@ pub async fn run(settings: Settings) -> Result<()> {
     let producer = producer(&settings.kafka).context("Failed to create kafka producer")?;
     let (scheduled_intents_tx1, scheduled_intents_rx1) = unbounded_channel();
     let (scheduled_intents_tx2, scheduled_intents_rx2) = unbounded_channel();
-    let event_sender_handle = EventSenderHandle::new(producer);
+    let event_sender_handle = EventSenderHandle::new(settings.app.clone(), producer);
     let intent_scheduler = IntentScheduler::new(scheduled_intents_tx1, scheduled_intents_rx2);
     let (mut client, connection) =
         connect(&format!("{}/{}", settings.database.url, settings.database.name,), NoTls).await?;
