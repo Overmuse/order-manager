@@ -36,6 +36,8 @@ pub async fn setup() -> (
                 NewTopic::new("lots", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("overmuse-trades", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("position-intents", 1, TopicReplication::Fixed(1)),
+                NewTopic::new("risk-check-request", 1, TopicReplication::Fixed(1)),
+                NewTopic::new("risk-check-response", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("trade-intents", 1, TopicReplication::Fixed(1)),
                 NewTopic::new("time", 1, TopicReplication::Fixed(1)),
             ],
@@ -58,7 +60,13 @@ pub async fn setup() -> (
 
     debug!("Subscribing to topics");
     consumer
-        .subscribe(&[&"allocations", &"claims", &"lots", &"trade-intents"])
+        .subscribe(&[
+            &"allocations",
+            &"claims",
+            &"lots",
+            &"risk-check-request",
+            &"trade-intents",
+        ])
         .unwrap();
     consumer
         .subscription()
@@ -75,7 +83,10 @@ pub async fn setup() -> (
         std::env::set_var("REDIS__URL", "redis://localhost:6379");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
         std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
-        std::env::set_var("KAFKA__INPUT_TOPICS", "overmuse-trades,position-intents,time");
+        std::env::set_var(
+            "KAFKA__INPUT_TOPICS",
+            "overmuse-trades,position-intents,risk-check-response,time",
+        );
         std::env::set_var("KAFKA__BOOTSTRAP_SERVERS", "localhost:9094");
         std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
         std::env::set_var("KAFKA__ACKS", "0");

@@ -19,6 +19,7 @@ pub enum Event {
     Allocation(Allocation),
     Claim(Claim),
     Lot(Lot),
+    RiskCheckRequest(TradeIntent),
 }
 
 impl EventSender {
@@ -41,6 +42,7 @@ impl EventSender {
                 Event::Allocation(alloc) => ("allocations", alloc.ticker),
                 Event::Claim(claim) => ("claims", claim.ticker),
                 Event::Lot(lot) => ("lots", lot.ticker),
+                Event::RiskCheckRequest(intent) => ("risk-check-request", intent.ticker),
             };
             let record = FutureRecord::to(topic).key(&key).payload(&payload);
             let send = self.producer.send(record, Duration::from_secs(0)).await;
