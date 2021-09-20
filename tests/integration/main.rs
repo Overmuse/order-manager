@@ -59,7 +59,9 @@ async fn receive_event(consumer: &StreamConsumer) -> Result<Event> {
             let intent: TradeIntent = serde_json::from_slice(payload)?;
             Event::TradeIntent(intent)
         }
-        _ => unreachable!(),
+        _ => {
+            unreachable!()
+        }
     };
     Ok(event)
 }
@@ -69,6 +71,15 @@ async fn receive_claim_and_risk_check_request(consumer: &StreamConsumer) -> Resu
     match events {
         (Event::Claim(c), Event::RiskCheckRequest(ti)) => Ok((c, ti)),
         (Event::RiskCheckRequest(ti), Event::Claim(c)) => Ok((c, ti)),
+        _ => return Err(anyhow!("Unexpected events")),
+    }
+}
+
+async fn receive_claim_and_trade_intent(consumer: &StreamConsumer) -> Result<(Claim, TradeIntent)> {
+    let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
+    match events {
+        (Event::Claim(c), Event::TradeIntent(ti)) => Ok((c, ti)),
+        (Event::TradeIntent(ti), Event::Claim(c)) => Ok((c, ti)),
         _ => return Err(anyhow!("Unexpected events")),
     }
 }
@@ -479,12 +490,47 @@ async fn test_9(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
 async fn test_10(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<()> {
     send_position(
         &producer,
+        &PositionIntent::builder("S2", Identifier::All, Amount::Zero).build()?,
+    )
+    .await?;
+
+    let (claim, trade_intent) = receive_claim_and_trade_intent(&consumer).await?;
+    assert_eq!(claim.amount, Amount::Shares(-Decimal::new(100, 0)));
+    assert_eq!(trade_intent.qty, -100);
+    let client_order_id = trade_intent.id;
+    let fill_message = OrderMessage {
+        client_order_id,
+        event_type: EventType::Fill,
+        ticker: "AAPL",
+        qty: 100,
+        position_qty: 0,
+        price: 100.0,
+        filled_qty: 100,
+        filled_avg_price: 100.0,
+        side: Side::Sell,
+        limit_price: None,
+    };
+
+    send_order_message(&producer, &fill_message).await?;
+    let (lot, allocation) = receive_lot_and_allocation(&consumer).await?;
+    assert_eq!(lot.shares, Decimal::new(-100, 0));
+    assert_eq!(allocation.shares, Decimal::new(-100, 0));
+    assert_eq!(allocation.owner, Owner::Strategy("S2".into(), None));
+    Ok(())
+}
+
+async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<()> {
+    send_position(
+        &producer,
         &PositionIntent::builder("S2", "AAPL", Amount::Shares(Decimal::new(200, 0))).build()?,
     )
     .await?;
 
-    let (claim, _trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
+    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
     assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
+    let response = RiskCheckResponse::Granted { intent: trade_intent };
+    send_risk_check_response(producer, &response).await?;
+    let _trade_intent = receive_event(&consumer).await?;
     info!("SLEEPING 1 SECOND TO LET UNREPORTED TRADE EXPIRE");
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     let record = FutureRecord::to("time")
@@ -515,41 +561,6 @@ async fn test_10(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
     //assert_eq!(lot.shares, Decimal::new(100, 0));
     //assert_eq!(allocation.shares, Decimal::new(100, 0));
     //assert_eq!(allocation.owner, Owner::Strategy("S2".into(), None));
-    Ok(())
-}
-
-async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<()> {
-    send_position(
-        &producer,
-        &PositionIntent::builder("S2", Identifier::All, Amount::Zero).build()?,
-    )
-    .await?;
-
-    let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
-    assert_eq!(claim.amount, Amount::Shares(-Decimal::new(100, 0)));
-    assert_eq!(trade_intent.qty, -100);
-    let client_order_id = trade_intent.id;
-    let response = RiskCheckResponse::Granted { intent: trade_intent };
-    send_risk_check_response(producer, &response).await?;
-    let _trade_intent = receive_event(&consumer).await?;
-    let fill_message = OrderMessage {
-        client_order_id,
-        event_type: EventType::Fill,
-        ticker: "AAPL",
-        qty: 100,
-        position_qty: 0,
-        price: 100.0,
-        filled_qty: 100,
-        filled_avg_price: 100.0,
-        side: Side::Sell,
-        limit_price: None,
-    };
-
-    send_order_message(&producer, &fill_message).await?;
-    let (lot, allocation) = receive_lot_and_allocation(&consumer).await?;
-    assert_eq!(lot.shares, Decimal::new(-100, 0));
-    assert_eq!(allocation.shares, Decimal::new(-100, 0));
-    assert_eq!(allocation.owner, Owner::Strategy("S2".into(), None));
     Ok(())
 }
 
