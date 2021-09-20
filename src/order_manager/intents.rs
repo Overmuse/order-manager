@@ -98,10 +98,16 @@ impl OrderManager {
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
         match diff_amount {
             Some(amount) if !amount.is_zero() => {
-                let pending_trade_amount =
-                    db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
-                if !pending_trade_amount.is_zero() {
-                    todo!("Schedule intent")
+                let pending_trades = db::get_pending_trades_by_ticker(self.db_client.as_ref(), ticker).await?;
+                if !pending_trades.is_empty() {
+                    let maybe_trade = self
+                        .generate_trades(ticker, &amount, intent.limit_price, intent.stop_price, None)
+                        .await?;
+                    if let Some(trade) = maybe_trade {
+                        let id = pending_trades.first().expect("Guaranteed to be non-empty").id;
+                        db::save_dependent_trade(self.db_client.as_ref(), id, &trade).await?
+                    }
+                    return Ok(None);
                 }
                 let mut claim = Claim::new(
                     intent.strategy.clone(),
