@@ -1,28 +1,20 @@
-use anyhow::{anyhow, Result};
-use chrono::{Duration, Utc};
-use futures::FutureExt;
-use rdkafka::consumer::StreamConsumer;
-use rdkafka::producer::{FutureProducer, FutureRecord};
+use anyhow::Result;
+use risk_manager::RiskCheckResponse;
 use rust_decimal::Decimal;
 use tracing::info;
-use tracing::{debug, subscriber::set_global_default};
+use tracing::subscriber::set_global_default;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
-use trading_base::{Amount, Identifier, OrderType, PositionIntent, UpdatePolicy};
+use trading_base::{Amount, PositionIntent};
 
 use helpers::*;
 use order_manager::types::Owner;
-use order_manager::Event;
-use setup::setup;
-use teardown::teardown;
 mod helpers;
-mod order_message;
-mod setup;
-mod teardown;
 
 /// An initial position intent leads to an trade intent for the full size of the
 /// position intent.
 async fn test_1() -> Result<()> {
     let app = spawn_app().await;
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     app.send_position(&PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0))).build()?)
         .await?;
     let (claim, trade_intent) = app.receive_claim_and_risk_check_request().await?;
@@ -30,8 +22,8 @@ async fn test_1() -> Result<()> {
     assert_eq!(trade_intent.qty, 100);
     let client_order_id = trade_intent.id;
     let response = RiskCheckResponse::Granted { intent: trade_intent };
-    send_risk_check_response(producer, &response).await?;
-    let _trade_intent = receive_event(&consumer).await?;
+    app.send_risk_check_response(&response).await?;
+    let _trade_intent = app.receive_event().await?;
     let fill_message = OrderMessage {
         client_order_id,
         event_type: EventType::Fill,

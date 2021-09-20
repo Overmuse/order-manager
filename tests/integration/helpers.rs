@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use kafka_settings::KafkaSettings;
 use order_manager::settings::{DatabaseSettings, Settings};
 use order_manager::types::{Allocation, Claim, Lot, Owner};
 use order_manager::{run, Event};
@@ -11,6 +10,7 @@ use rdkafka::{
     producer::{FutureProducer, FutureRecord},
     ClientConfig,
 };
+use risk_manager::RiskCheckResponse;
 use serde::Serialize;
 use tokio_postgres::{connect, Client, NoTls};
 use tracing::{debug, error};
@@ -35,7 +35,7 @@ impl EventType {
 #[serde(rename_all = "snake_case")]
 pub enum Side {
     Buy,
-    Sell,
+    _Sell,
 }
 
 pub struct OrderMessage {
@@ -83,27 +83,38 @@ impl OrderMessage {
     }
 }
 
+fn kafka_topic(topic: &str, test_id: &str) -> String {
+    format!("{}-{}", topic, test_id)
+}
+
 pub struct TestApp {
-    db: Client,
+    _db: Client,
     test_id: String,
     consumer: StreamConsumer,
     producer: FutureProducer,
 }
 
 impl TestApp {
-    fn kafka_topic(&self, topic: &str) -> String {
-        format!("{}-{}", topic, self.test_id)
-    }
-
     pub async fn send_order_message(&self, message: &OrderMessage) -> Result<()> {
         let payload = message.format();
-        let topic = self.kafka_topic("overmuse-trades");
+        let topic = kafka_topic("overmuse-trades", &self.test_id);
         let order_update = FutureRecord::to(&topic).key("ticker").payload(&payload);
         self.producer
             .send_result(order_update)
             .map_err(|(e, m)| anyhow!("{:?}\n{:?}", e, m))?
             .await?
             .map_err(|(e, m)| anyhow!("{:?}\n{:?}", e, m))?;
+        Ok(())
+    }
+
+    pub async fn send_risk_check_response(&self, response: &RiskCheckResponse) -> Result<()> {
+        let payload = serde_json::to_string(response)?;
+        let topic = kafka_topic("risk-check-response", &self.test_id);
+        let record = FutureRecord::to(&topic).key("").payload(&payload);
+        self.producer
+            .send(record, std::time::Duration::from_secs(0))
+            .await
+            .map_err(|(e, _)| e)?;
         Ok(())
     }
 
@@ -114,7 +125,7 @@ impl TestApp {
             Identifier::All => "",
         }
         .to_string();
-        let topic = self.kafka_topic("position-intents");
+        let topic = kafka_topic("position-intents", &self.test_id);
         let message = FutureRecord::to(&topic).key(&key).payload(&payload);
         self.producer
             .send_result(message)
@@ -123,19 +134,54 @@ impl TestApp {
             .map_err(|(e, m)| anyhow!("{:?}\n{:?}", e, m))?;
         Ok(())
     }
+
     pub async fn receive_event(&self) -> Result<Event> {
         let msg = self.consumer.recv().await?;
+        let topic = msg.topic();
         let payload = msg.payload().ok_or(anyhow!("Missing payload"))?;
-        let event: Event = serde_json::from_slice(payload)?;
+        let event = if topic.starts_with("allocations") {
+            let allocation: Allocation = serde_json::from_slice(payload)?;
+            Event::Allocation(allocation)
+        } else if topic.starts_with("claims") {
+            let claim: Claim = serde_json::from_slice(payload)?;
+            Event::Claim(claim)
+        } else if topic.starts_with("lots") {
+            let lot: Lot = serde_json::from_slice(payload)?;
+            Event::Lot(lot)
+        } else if topic.starts_with("risk-check-request") {
+            let intent: TradeIntent = serde_json::from_slice(payload)?;
+            Event::RiskCheckRequest(intent)
+        } else if topic.starts_with("trade-intents") {
+            let intent: TradeIntent = serde_json::from_slice(payload)?;
+            Event::TradeIntent(intent)
+        } else {
+            unreachable!()
+        };
         Ok(event)
     }
 
-    pub async fn receive_claim_and_trade_intent(&self) -> Result<(Claim, TradeIntent)> {
+    pub async fn _receive_claim_and_trade_intent(&self) -> Result<(Claim, TradeIntent)> {
         let events = tokio::try_join!(self.receive_event(), self.receive_event())?;
         match events {
             (Event::Claim(c), Event::TradeIntent(ti)) => Ok((c, ti)),
             (Event::TradeIntent(ti), Event::Claim(c)) => Ok((c, ti)),
-            _ => return Err(anyhow!("Unexpected events")),
+            _ => {
+                error!("UH OH");
+                return Err(anyhow!("Unexpected events"));
+            }
+        }
+    }
+
+    pub async fn receive_claim_and_risk_check_request(&self) -> Result<(Claim, TradeIntent)> {
+        let events = tokio::try_join!(self.receive_event(), self.receive_event())?;
+        debug!("{:?}", events);
+        match events {
+            (Event::Claim(c), Event::RiskCheckRequest(ti)) => Ok((c, ti)),
+            (Event::RiskCheckRequest(ti), Event::Claim(c)) => Ok((c, ti)),
+            _ => {
+                debug!("{:?}", events);
+                return Err(anyhow!("Unexpected events"));
+            }
         }
     }
 
@@ -148,7 +194,7 @@ impl TestApp {
         }
     }
 
-    pub async fn receive_lot_allocation_and_house_allocation(&self) -> Result<(Lot, Allocation, Allocation)> {
+    pub async fn _receive_lot_allocation_and_house_allocation(&self) -> Result<(Lot, Allocation, Allocation)> {
         let events = tokio::try_join!(self.receive_event(), self.receive_event(), self.receive_event())?;
         match events {
             (Event::Allocation(a1), Event::Allocation(a2), Event::Lot(l)) => {
@@ -175,24 +221,16 @@ impl TestApp {
             _ => Err(anyhow!("Unexpected events")),
         }
     }
-    async fn send_risk_check_response(producer: &FutureProducer, response: &RiskCheckResponse) -> Result<()> {
-        let payload = serde_json::to_string(response)?;
-        let record = FutureRecord::to("risk-check-response").key("").payload(&payload);
-        producer
-            .send(record, std::time::Duration::from_secs(0))
-            .await
-            .map_err(|(e, _)| e)?;
-        Ok(())
-    }
 }
 
 pub async fn spawn_app() -> TestApp {
     let test_id = Uuid::new_v4().to_simple().to_string();
+    tracing::info!("TEST ID: {}", test_id);
     let database_address = "postgres://postgres:password@localhost:5432";
     let database_name = format!("db_{}", test_id);
-    let input_topics: Vec<String> = ["overmuse-trades", "position-intents", "time"]
+    let input_topics: Vec<String> = ["overmuse-trades", "position-intents", "risk-check-response", "time"]
         .iter()
-        .map(|topic| format!("{}-{}", topic, test_id))
+        .map(|topic| kafka_topic(topic, &test_id))
         .collect();
     let input_topics = input_topics.join(",");
     std::env::set_var("APP__UNREPORTED_TRADE_EXPIRY_SECONDS", "1");
@@ -216,15 +254,14 @@ pub async fn spawn_app() -> TestApp {
     debug!("Configuring database");
     let db = configure_database(&settings.database, &test_id).await;
     debug!("Configuring kafka");
-    let (consumer, producer) = configure_kafka(&settings.kafka, &test_id).await;
+    let (consumer, producer) = configure_kafka(&test_id).await;
 
     tokio::spawn(async move {
         let res = run(settings).await;
         tracing::error!("{:?}", res);
     });
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     TestApp {
-        db,
+        _db: db,
         test_id,
         consumer,
         producer,
@@ -261,7 +298,7 @@ async fn configure_database(settings: &DatabaseSettings, test_id: &str) -> Clien
     client
 }
 
-async fn configure_kafka(settings: &KafkaSettings, test_id: &str) -> (StreamConsumer, FutureProducer) {
+async fn configure_kafka(test_id: &str) -> (StreamConsumer, FutureProducer) {
     let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
         .set("bootstrap.servers", "localhost:9094")
         .set("security.protocol", "PLAINTEXT")
@@ -274,11 +311,13 @@ async fn configure_kafka(settings: &KafkaSettings, test_id: &str) -> (StreamCons
         "lots",
         "overmuse-trades",
         "position-intents",
+        "risk-check-request",
+        "risk-check-response",
         "trade-intents",
         "time",
     ]
     .iter()
-    .map(|topic| format!("{}-{}", topic, test_id))
+    .map(|topic| kafka_topic(topic, test_id))
     .collect();
     let topics: Vec<NewTopic> = topic_names
         .iter()
@@ -298,9 +337,9 @@ async fn configure_kafka(settings: &KafkaSettings, test_id: &str) -> (StreamCons
         .create()
         .expect("Failed to create kafka consumer");
 
-    let consumer_topic_names: Vec<String> = ["allocations", "claims", "lots", "trade-intents"]
+    let consumer_topic_names: Vec<String> = ["allocations", "claims", "lots", "risk-check-request", "trade-intents"]
         .iter()
-        .map(|topic| format!("{}-{}", topic, test_id))
+        .map(|topic| kafka_topic(topic, test_id))
         .collect();
     let half_borrowed: Vec<&str> = consumer_topic_names.iter().map(|x| x.as_str()).collect();
     consumer
