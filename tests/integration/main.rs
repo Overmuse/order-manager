@@ -527,7 +527,7 @@ async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
     .await?;
 
     let (claim, trade_intent) = receive_claim_and_risk_check_request(&consumer).await?;
-    assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
+    assert_eq!(claim.amount, Amount::Shares(Decimal::new(200, 0)));
     let response = RiskCheckResponse::Granted { intent: trade_intent };
     send_risk_check_response(producer, &response).await?;
     let _trade_intent = receive_event(&consumer).await?;
