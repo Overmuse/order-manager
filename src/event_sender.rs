@@ -50,7 +50,6 @@ impl EventSender {
                 Event::Lot(lot) => (self.settings.topics.lot.as_str(), lot.ticker),
                 Event::RiskCheckRequest(ti) => (self.settings.topics.risk.as_str(), ti.ticker),
             };
-            info!("Topic: {}", topic);
             let record = FutureRecord::to(topic).key(&key).payload(&payload);
             let send = self.producer.send(record, Duration::from_secs(0)).await;
             if let Err((e, m)) = send {

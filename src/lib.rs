@@ -20,11 +20,6 @@ use event_sender::EventSenderHandle;
 use intent_scheduler::IntentScheduler;
 pub use settings::Settings;
 
-mod embedded {
-    use refinery::embed_migrations;
-    embed_migrations!("migrations");
-}
-
 pub async fn run(settings: Settings) -> Result<()> {
     let consumer = consumer(&settings.kafka).context("Failed to create kafka consumer")?;
     let producer = producer(&settings.kafka).context("Failed to create kafka producer")?;
@@ -32,14 +27,13 @@ pub async fn run(settings: Settings) -> Result<()> {
     let (scheduled_intents_tx2, scheduled_intents_rx2) = unbounded_channel();
     let event_sender_handle = EventSenderHandle::new(settings.app.clone(), producer);
     let intent_scheduler = IntentScheduler::new(scheduled_intents_tx1, scheduled_intents_rx2);
-    let (mut client, connection) =
+    let (client, connection) =
         connect(&format!("{}/{}", settings.database.url, settings.database.name,), NoTls).await?;
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             error!("connection error: {}", e);
         }
     });
-    embedded::migrations::runner().run_async(&mut client).await?;
     let redis = redis::Redis::new(settings.redis)?;
     let client = Arc::new(client);
     let order_manager = OrderManager::new(

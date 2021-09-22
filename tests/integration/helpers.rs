@@ -13,6 +13,8 @@ use rdkafka::{
 };
 use risk_manager::RiskCheckResponse;
 use serde::Serialize;
+use sqlx::{migrate::Migrator, Connection, PgConnection};
+use std::path::Path;
 use tokio_postgres::{connect, Client, NoTls};
 use tracing::subscriber::set_global_default;
 use tracing::{debug, error};
@@ -300,7 +302,8 @@ async fn configure_database(settings: &DatabaseSettings, test_id: &str) -> Clien
             .await
             .expect("Failed to create database");
     }
-    let (client, connection) = connect(&format!("{}/{}", &settings.url, &db_name), NoTls)
+    let connection_string = format!("{}/{}", &settings.url, &db_name);
+    let (client, connection) = connect(&connection_string, NoTls)
         .await
         .expect("Failed to connect to Postgres");
     tokio::spawn(async move {
@@ -308,6 +311,9 @@ async fn configure_database(settings: &DatabaseSettings, test_id: &str) -> Clien
             error!("Connection error: {}", e);
         }
     });
+    let mut conn = PgConnection::connect(&connection_string).await.unwrap();
+    let runner = Migrator::new(Path::new("migrations")).await.unwrap();
+    runner.run(&mut conn).await.unwrap();
     client
 }
 
