@@ -275,6 +275,7 @@ pub async fn spawn_app() -> TestApp {
         let res = run(settings).await;
         tracing::error!("{:?}", res);
     });
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     TestApp {
         _db: db,
         test_id,
