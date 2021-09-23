@@ -43,8 +43,12 @@ impl OrderManager {
 
             if pending_trade_amount.is_zero() {
                 debug!("Unfilled claim, sending new trade");
-                self.generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None, Some(claim.id))
+                let maybe_trade = self
+                    .generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None, Some(claim.id))
                     .await?;
+                if let Some(trade_intent) = maybe_trade {
+                    self.event_sender.send(Event::RiskCheckRequest(trade_intent)).await?
+                }
             }
         }
         Ok(())
