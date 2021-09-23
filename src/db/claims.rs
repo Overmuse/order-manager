@@ -57,12 +57,12 @@ pub async fn delete_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Resul
 }
 
 #[tracing::instrument(skip(client, claim))]
-pub async fn save_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result<(), Error> {
+pub async fn upsert_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result<(), Error> {
     trace!(id = %claim.id, "Saving claim");
     let (amount, unit) = split_amount_spec(&claim.amount);
     client
         .execute(
-            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit, limit_price) VALUES ($1, $2, $3, $4, $5, $6, $7);",
+            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit, limit_price) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (strategy, COALESCE(sub_strategy, ' '), ticker) WHERE sub_strategy IS NOT NULL DO UPDATE SET id = EXCLUDED.id, amount = EXCLUDED.amount, unit = EXCLUDED.unit, limit_price = EXCLUDED.limit_price;",
             &[
                 &claim.id,
                 &claim.strategy,
