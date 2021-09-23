@@ -117,9 +117,9 @@ impl OrderManager {
                     intent.limit_price,
                 );
                 self.net_claim(&mut claim).await?;
-                db::save_claim(self.db_client.as_ref(), &claim)
+                db::upsert_claim(self.db_client.as_ref(), &claim)
                     .await
-                    .context("Failed to save claim")?;
+                    .context("Failed to upsert claim")?;
                 self.event_sender.send(Event::Claim(claim.clone())).await?;
                 self.generate_trades(
                     ticker,
@@ -239,7 +239,7 @@ impl OrderManager {
                 Amount::Shares(-position.shares),
                 None,
             );
-            db::save_claim(self.db_client.as_ref(), &claim)
+            db::upsert_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
             claim_id = Some(claim.id);
