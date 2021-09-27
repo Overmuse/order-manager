@@ -229,7 +229,27 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self, position), fields(position.ticker))]
     pub async fn close_position(&self, position: Position) -> Result<()> {
-        let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None)?;
+        let ticker = &position.ticker;
+        let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
+        let pending_shares: Decimal = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+            .await
+            .context("Failed to get pending trade amount")?
+            .into();
+        let owned_shares: Decimal = positions.iter().map(|pos| pos.shares).sum();
+        let (sent, maybe_saved) = make_trades(
+            &position.ticker,
+            -position.shares,
+            owned_shares + pending_shares,
+            None,
+            None,
+        )?;
+        if let Some(saved) = maybe_saved {
+            debug!("Saving dependent trade");
+            db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
+                .await
+                .context("Failed to save dependent trade")?;
+        }
+
         let mut claim_id = None;
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
             let claim = Claim::new(
@@ -245,7 +265,7 @@ impl OrderManager {
             claim_id = Some(claim.id);
             self.event_sender.send(Event::Claim(claim)).await?;
         };
-        self.send_trade(trade_intent, claim_id).await
+        self.send_trade(sent, claim_id).await
     }
 
     async fn net_claim(&self, claim: &mut Claim) -> Result<()> {
