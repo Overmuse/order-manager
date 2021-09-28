@@ -158,7 +158,7 @@ impl OrderManager {
                     .flatten()
                     .or(limit_price);
                 match price {
-                    Some(price) => dollars / price,
+                    Some(price) => (dollars / price).round_dp(8),
                     None => {
                         warn!("Missing price");
                         return Ok(None);
