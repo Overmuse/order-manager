@@ -11,7 +11,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{debug, error, info};
 use trading_base::{PositionIntent, TradeIntent};
-use uuid::Uuid;
 
 mod dependent_trades;
 mod input;
@@ -77,10 +76,10 @@ impl OrderManager {
         Ok(())
     }
 
-    async fn send_trade(&self, trade: TradeIntent, claim_id: Option<Uuid>) -> Result<()> {
+    async fn send_trade(&self, trade: TradeIntent) -> Result<()> {
         db::save_pending_trade(
             self.db_client.as_ref(),
-            PendingTrade::new(trade.id, claim_id, trade.ticker.clone(), trade.qty as i32),
+            PendingTrade::new(trade.id, trade.ticker.clone(), trade.qty as i32),
         )
         .await
         .context("Failed to save pending trade")?;

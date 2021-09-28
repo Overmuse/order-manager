@@ -13,7 +13,7 @@ impl OrderManager {
         if !trades.is_empty() {
             debug!(%id, "Triggering dependent trades");
             for trade in trades {
-                self.send_trade(trade, None).await?
+                self.send_trade(trade).await?
             }
         }
         Ok(())
