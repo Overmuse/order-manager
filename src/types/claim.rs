@@ -68,7 +68,7 @@ pub fn calculate_claim_amount(
 ) -> Option<Amount> {
     match intent_amount {
         Amount::Dollars(dollars) => match maybe_price {
-            Some(price) => Some(Amount::Dollars(dollars - price * strategy_shares)),
+            Some(price) => Some(Amount::Dollars((dollars - price * strategy_shares).round_dp(8))),
             None => {
                 warn!("Missing price");
                 None
@@ -89,10 +89,16 @@ mod test {
         let dollars = calculate_claim_amount(&Amount::Dollars(Decimal::TWO), Decimal::ONE, Some(Decimal::ONE));
         let dollars_no_price = calculate_claim_amount(&Amount::Dollars(Decimal::TWO), Decimal::ONE, None);
         let zero = calculate_claim_amount(&Amount::Zero, Decimal::ONE, None);
+        let fractional = calculate_claim_amount(
+            &Amount::Dollars(Decimal::new(123456789, 9)),
+            Decimal::ZERO,
+            Some(Decimal::ONE),
+        );
 
         assert_eq!(shares, Some(Amount::Shares(Decimal::ONE)));
         assert_eq!(dollars, Some(Amount::Dollars(Decimal::ONE)));
         assert_eq!(dollars_no_price, None);
         assert_eq!(zero, Some(Amount::Shares(-Decimal::ONE)));
+        assert_eq!(fractional, Some(Amount::Dollars(Decimal::new(12345679, 8))));
     }
 }

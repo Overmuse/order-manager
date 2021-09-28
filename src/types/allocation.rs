@@ -102,7 +102,7 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 if dollars.is_sign_negative() {
                     allocated_dollars.set_sign_negative(true)
                 }
-                (allocated_dollars, allocated_dollars / lot.price)
+                (allocated_dollars, (allocated_dollars / lot.price).round_dp(8))
             }
             Amount::Shares(shares) => {
                 let mut allocated_shares = shares.abs().min(remaining_shares.abs());
