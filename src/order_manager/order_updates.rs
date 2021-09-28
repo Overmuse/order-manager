@@ -165,7 +165,7 @@ fn aggregate_previous_lots(lots: &[Lot]) -> (Decimal, Decimal) {
     lots.iter().fold((Decimal::ZERO, Decimal::ONE), |(shares, price), lot| {
         (
             shares + lot.shares,
-            (price * shares + lot.price * lot.shares) / (shares + lot.shares),
+            ((price * shares + lot.price * lot.shares) / (shares + lot.shares)).round_dp(8),
         )
     })
 }
@@ -179,7 +179,7 @@ fn calculate_lot_quantity_and_price(
     new_price: Decimal,
 ) -> (Decimal, Decimal) {
     let quantity = new_quantity - old_quantity;
-    let price = (new_price * new_quantity - old_price * old_quantity) / quantity;
+    let price = ((new_price * new_quantity - old_price * old_quantity) / quantity).round_dp(8);
     (quantity, price)
 }
 
