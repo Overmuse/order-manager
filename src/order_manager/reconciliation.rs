@@ -25,9 +25,6 @@ impl OrderManager {
             {
                 warn!(id = %trade.id, "Deleting unreported trade");
                 db::delete_pending_trade_by_id(self.db_client.as_ref(), trade.id).await?;
-                if let Some(claim_id) = trade.claim_id {
-                    db::delete_claim_by_id(self.db_client.as_ref(), claim_id).await?;
-                }
             }
         }
         Ok(())

@@ -250,7 +250,6 @@ impl OrderManager {
                 .context("Failed to save dependent trade")?;
         }
 
-        let mut claim_id = None;
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
             let claim = Claim::new(
                 strategy,
@@ -262,10 +261,9 @@ impl OrderManager {
             db::upsert_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
-            claim_id = Some(claim.id);
             self.event_sender.send(Event::Claim(claim)).await?;
         };
-        self.send_trade(sent, claim_id).await
+        self.send_trade(sent).await
     }
 
     async fn net_claim(&self, claim: &mut Claim) -> Result<()> {

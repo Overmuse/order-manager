@@ -71,7 +71,12 @@ async fn receive_claim_and_risk_check_request(consumer: &StreamConsumer) -> Resu
     match events {
         (Event::Claim(c), Event::RiskCheckRequest(ti)) => Ok((c, ti)),
         (Event::RiskCheckRequest(ti), Event::Claim(c)) => Ok((c, ti)),
-        _ => return Err(anyhow!("Unexpected events")),
+        x => {
+            return Err(anyhow!(
+                "Unexpected events: was expecting a Claim and RiskCheckRequest. Events {:?}",
+                x
+            ))
+        }
     }
 }
 
@@ -80,7 +85,12 @@ async fn receive_claim_and_trade_intent(consumer: &StreamConsumer) -> Result<(Cl
     match events {
         (Event::Claim(c), Event::TradeIntent(ti)) => Ok((c, ti)),
         (Event::TradeIntent(ti), Event::Claim(c)) => Ok((c, ti)),
-        _ => return Err(anyhow!("Unexpected events")),
+        x => {
+            return Err(anyhow!(
+                "Unexpected events: was expecting a Claim and TradeIntent. Events {:?}",
+                x
+            ))
+        }
     }
 }
 
@@ -89,7 +99,12 @@ async fn receive_lot_and_allocation(consumer: &StreamConsumer) -> Result<(Lot, A
     match events {
         (Event::Allocation(a), Event::Lot(l)) => Ok((l, a)),
         (Event::Lot(l), Event::Allocation(a)) => Ok((l, a)),
-        _ => Err(anyhow!("Unexpected events")),
+        x => {
+            return Err(anyhow!(
+                "Unexpected events: was expecting a Lot and Allocation. Events {:?}",
+                x
+            ))
+        }
     }
 }
 
@@ -123,7 +138,12 @@ async fn receive_lot_allocation_and_house_allocation(
                 Ok((l, a1, a2))
             }
         }
-        _ => Err(anyhow!("Unexpected events")),
+        x => {
+            return Err(anyhow!(
+                "Unexpected events: was expecting a Lot, and two Allocations. Events {:?}",
+                x
+            ))
+        }
     }
 }
 
@@ -565,7 +585,7 @@ async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
 }
 
 #[tokio::test]
-async fn main() -> Result<()> {
+async fn main() {
     let (admin, admin_options, consumer, producer) = setup().await;
     // TODO: Replace this sleep with a liveness check
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -574,31 +594,37 @@ async fn main() -> Result<()> {
     let record = FutureRecord::to("time")
         .key("")
         .payload(r#"{"state":"open","next_close":710}"#);
-    producer.send_result(record).map_err(|x| x.0)?.await?.map_err(|x| x.0)?;
+    producer
+        .send_result(record)
+        .map_err(|x| x.0)
+        .unwrap()
+        .await
+        .unwrap()
+        .map_err(|x| x.0)
+        .unwrap();
 
     info!("TEST 1");
-    test_1(&producer, &consumer).await?;
+    test_1(&producer, &consumer).await.unwrap();
     info!("TEST 2");
-    test_2(&producer, &consumer).await?;
+    test_2(&producer, &consumer).await.unwrap();
     info!("TEST 3");
-    test_3(&producer, &consumer).await?;
+    test_3(&producer, &consumer).await.unwrap();
     info!("TEST 4");
-    test_4(&producer, &consumer).await?;
+    test_4(&producer, &consumer).await.unwrap();
     info!("TEST 5");
-    test_5(&producer, &consumer).await?;
+    test_5(&producer, &consumer).await.unwrap();
     info!("TEST 6");
-    test_6(&producer, &consumer).await?;
+    test_6(&producer, &consumer).await.unwrap();
     info!("TEST 7");
-    test_7(&producer, &consumer).await?;
+    test_7(&producer, &consumer).await.unwrap();
     info!("TEST 8");
-    test_8(&producer, &consumer).await?;
+    test_8(&producer, &consumer).await.unwrap();
     info!("TEST 9");
-    test_9(&producer, &consumer).await?;
+    test_9(&producer, &consumer).await.unwrap();
     info!("TEST 10");
-    test_10(&producer, &consumer).await?;
+    test_10(&producer, &consumer).await.unwrap();
     info!("TEST 11");
-    test_11(&producer, &consumer).await?;
+    test_11(&producer, &consumer).await.unwrap();
 
     teardown(&admin, &admin_options).await;
-    Ok(())
 }

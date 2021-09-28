@@ -17,7 +17,6 @@ pub enum Status {
 #[derive(Clone, Debug, Serialize)]
 pub struct PendingTrade {
     pub id: Uuid,
-    pub claim_id: Option<Uuid>,
     pub ticker: String,
     pub quantity: i32,
     pub pending_quantity: i32,
@@ -27,11 +26,10 @@ pub struct PendingTrade {
 
 impl PendingTrade {
     #[tracing::instrument(skip(id, ticker, quantity))]
-    pub fn new(id: Uuid, claim_id: Option<Uuid>, ticker: String, quantity: i32) -> Self {
+    pub fn new(id: Uuid, ticker: String, quantity: i32) -> Self {
         tracing::trace!(%id, %ticker, %quantity, "New PendingTrade");
         Self {
             id,
-            claim_id,
             ticker,
             quantity,
             pending_quantity: quantity,
@@ -55,7 +53,6 @@ impl TryFrom<Row> for PendingTrade {
 
         Ok(Self {
             id: row.try_get("id")?,
-            claim_id: row.try_get("claim_id")?,
             ticker: row.try_get("ticker")?,
             quantity: row.try_get("quantity")?,
             pending_quantity: row.try_get("pending_quantity")?,
