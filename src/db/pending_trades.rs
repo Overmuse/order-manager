@@ -9,13 +9,13 @@ use uuid::Uuid;
 pub async fn get_pending_trade_amount_by_ticker<T: GenericClient>(client: &T, ticker: &str) -> Result<i32, Error> {
     trace!(ticker, "Fetching pending trade amount for ticker");
     Ok(client
-        .query_opt(
+        .query(
             "SELECT pending_quantity FROM pending_trades WHERE ticker = $1",
             &[&ticker],
         )
         .await?
-        .map(|row| row.get(0))
-        .unwrap_or(0))
+        .into_iter()
+        .fold(0, |acc, x| acc + x.get::<usize, i32>(0)))
 }
 
 #[tracing::instrument(skip(client))]
