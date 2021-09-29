@@ -45,7 +45,7 @@ impl EventSender {
                 Event::RiskCheckRequest(intent) => ("risk-check-request", intent.ticker),
             };
             let record = FutureRecord::to(topic).key(&key).payload(&payload);
-            let send = self.producer.send(record, Duration::from_secs(0)).await;
+            let send = self.producer.send(record, Duration::ZERO).await;
             if let Err((e, m)) = send {
                 error!("Error: {:?}\nMessage: {:?}", e, m)
             }

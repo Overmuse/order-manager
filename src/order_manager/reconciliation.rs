@@ -56,9 +56,12 @@ impl OrderManager {
         let house_positions = db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
         let house_positions = house_positions.iter().filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
-            if position.shares.abs() > Decimal::from_f64(0.99).unwrap() {
+            if position.shares.abs() >= Decimal::ONE {
                 debug!(ticker = %position.ticker, shares = %position.shares, "Reducing size of house position");
-                let mut shares_to_liquidate = (position.shares.abs() - Decimal::from_f64(0.99).unwrap())
+
+                // Since shares are stored with 8 decimal points of precision, adding 1e-9
+                // guarantees that we will be left with < 1 share in the house position.
+                let mut shares_to_liquidate = (position.shares.abs() - Decimal::ONE + Decimal::new(1, 9))
                     .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
                 let maybe_trade = self
