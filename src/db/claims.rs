@@ -1,5 +1,5 @@
 use super::utils::split_amount_spec;
-use crate::types::Claim;
+use crate::types::{Claim, Owner};
 use std::convert::TryInto;
 use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
@@ -53,6 +53,35 @@ pub async fn update_claim_amount<T: GenericClient>(client: &T, id: Uuid, amount:
 pub async fn delete_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Result<(), Error> {
     trace!(%id, "Deleting claim for id");
     client.execute("DELETE FROM claims WHERE id = $1;", &[&id]).await?;
+    Ok(())
+}
+
+#[tracing::instrument(skip(client, owner, ticker))]
+pub async fn delete_claims_by_owner_and_ticker<T: GenericClient>(
+    client: &T,
+    owner: Owner,
+    ticker: &str,
+) -> Result<(), Error> {
+    trace!(?owner, ticker, "Deleting claims for owner and ticker");
+    let (owner, sub_owner) = match &owner {
+        Owner::House => ("House", None),
+        Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
+    };
+    match sub_owner {
+        Some(sub_owner) => {
+            client
+                .execute(
+                    "DELETE FROM claims WHERE owner = $1, sub_owner = $2, ticker = $3",
+                    &[&owner, &sub_owner, &ticker],
+                )
+                .await?
+        }
+        None => {
+            client
+                .execute("DELETE FROM claims WHERE owner = $1, ticker = $2", &[&owner, &ticker])
+                .await?
+        }
+    };
     Ok(())
 }
 

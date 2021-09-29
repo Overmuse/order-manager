@@ -95,6 +95,19 @@ impl OrderManager {
             return Ok(None);
         }
         let maybe_price = self.redis.get_latest_price(ticker).await?.or(intent.limit_price);
+        if let Amount::Zero = intent.amount {
+            // If there's no pending trades for ticker, cancel any claim for this strategy and ticker
+            let pending_amount = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
+            if pending_amount.is_zero() {
+                debug!("Cancelling claim that is no longer active");
+                db::delete_claims_by_owner_and_ticker(
+                    self.db_client.as_ref(),
+                    Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
+                    ticker,
+                )
+                .await?;
+            }
+        }
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
         match diff_amount {
             Some(amount) if !amount.is_zero() => {
@@ -109,14 +122,13 @@ impl OrderManager {
                     }
                     return Ok(None);
                 }
-                let mut claim = Claim::new(
+                let claim = Claim::new(
                     intent.strategy.clone(),
                     intent.sub_strategy.clone(),
                     ticker.to_string(),
                     amount,
                     intent.limit_price,
                 );
-                self.net_claim(&mut claim).await?;
                 db::upsert_claim(self.db_client.as_ref(), &claim)
                     .await
                     .context("Failed to upsert claim")?;
@@ -264,14 +276,6 @@ impl OrderManager {
             self.event_sender.send(Event::Claim(claim)).await?;
         };
         self.send_trade(sent).await
-    }
-
-    async fn net_claim(&self, claim: &mut Claim) -> Result<()> {
-        let _maybe_house_position =
-            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), "House", None, &claim.ticker).await?;
-        // TODO: Actually net the claim
-
-        Ok(())
     }
 }
 
