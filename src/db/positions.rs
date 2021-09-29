@@ -12,10 +12,17 @@ pub async fn get_positions_by_owner<T: GenericClient>(client: &T, owner: &Owner)
     };
     let res = match sub_owner {
         Some(sub_owner) => {
-            client.query("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 AND sub_owner = $2 GROUP BY owner, sub_owner, ticker", &[&owner, &sub_owner]).await?
+            client
+                .query(
+                    "SELECT * FROM positions WHERE owner = $1 AND sub_owner = $2",
+                    &[&owner, &sub_owner],
+                )
+                .await?
         }
         None => {
-            client.query("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 GROUP BY owner, sub_owner, ticker", &[&owner]).await?
+            client
+                .query("SELECT * FROM positions WHERE owner = $1", &[&owner])
+                .await?
         }
     };
 
@@ -25,11 +32,12 @@ pub async fn get_positions_by_owner<T: GenericClient>(client: &T, owner: &Owner)
 #[tracing::instrument(skip(client, ticker))]
 pub async fn get_positions_by_ticker<T: GenericClient>(client: &T, ticker: &str) -> Result<Vec<Position>, Error> {
     trace!(ticker, "Fetching positions for ticker");
-    client.query("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE ticker = $1 GROUP BY owner, sub_owner, ticker", &[&ticker])
-            .await?
-            .into_iter()
-            .map(TryInto::try_into)
-            .collect()
+    client
+        .query("SELECT * FROM positions WHERE ticker = $1", &[&ticker])
+        .await?
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect()
 }
 
 #[tracing::instrument(skip(client, owner, sub_owner, ticker))]
@@ -42,10 +50,20 @@ pub async fn get_position_by_owner_and_ticker<T: GenericClient>(
     trace!(%owner, ticker, "Fetching positions for owner and ticker");
     let res = match sub_owner {
         Some(sub_owner) => {
-            client.query_opt("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 AND sub_owner = $2 AND ticker = $3 GROUP BY owner, sub_owner, ticker", &[&owner, &sub_owner, &ticker]).await?
+            client
+                .query_opt(
+                    "SELECT * FROM positions WHERE owner = $1 AND sub_owner = $2 AND ticker = $3",
+                    &[&owner, &sub_owner, &ticker],
+                )
+                .await?
         }
         None => {
-            client.query_opt("SELECT owner, sub_owner, ticker, sum(shares) AS shares, sum(basis) AS basis FROM allocations WHERE owner = $1 AND ticker = $2 GROUP BY owner, sub_owner, ticker", &[&owner, &ticker]).await?
+            client
+                .query_opt(
+                    "SELECT * FROM positions WHERE owner = $1 AND ticker = $2",
+                    &[&owner, &ticker],
+                )
+                .await?
         }
     };
 
@@ -56,7 +74,7 @@ pub async fn get_position_by_owner_and_ticker<T: GenericClient>(
 pub async fn get_positions<T: GenericClient>(client: &T) -> Result<Vec<Position>, Error> {
     trace!("Fetching all positions");
     client
-        .query("SELECT * FROM allocations", &[])
+        .query("SELECT * FROM positions", &[])
         .await?
         .into_iter()
         .map(TryInto::try_into)
