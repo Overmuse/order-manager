@@ -1,5 +1,5 @@
 use super::utils::split_amount_spec;
-use crate::types::{Claim, Owner};
+use crate::types::Claim;
 use std::convert::TryInto;
 use tokio_postgres::{Error, GenericClient};
 use tracing::trace;
