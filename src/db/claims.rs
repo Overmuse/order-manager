@@ -56,29 +56,34 @@ pub async fn delete_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Resul
     Ok(())
 }
 
-#[tracing::instrument(skip(client, owner, ticker))]
-pub async fn delete_claims_by_owner_and_ticker<T: GenericClient>(
+#[tracing::instrument(skip(client, strategy, sub_strategy, ticker))]
+pub async fn delete_claims_by_strategy_and_ticker<T: GenericClient>(
     client: &T,
-    owner: Owner,
+    strategy: &str,
+    sub_strategy: Option<&str>,
     ticker: &str,
 ) -> Result<(), Error> {
-    trace!(?owner, ticker, "Deleting claims for owner and ticker");
-    let (owner, sub_owner) = match &owner {
-        Owner::House => ("House", None),
-        Owner::Strategy(owner, sub_owner) => (owner.as_str(), sub_owner.as_ref()),
-    };
-    match sub_owner {
-        Some(sub_owner) => {
+    trace!(
+        strategy,
+        ?sub_strategy,
+        ticker,
+        "Deleting claims for strategy and ticker"
+    );
+    match sub_strategy {
+        Some(sub_strategy) => {
             client
                 .execute(
                     "DELETE FROM claims WHERE owner = $1, sub_owner = $2, ticker = $3",
-                    &[&owner, &sub_owner, &ticker],
+                    &[&strategy, &sub_strategy, &ticker],
                 )
                 .await?
         }
         None => {
             client
-                .execute("DELETE FROM claims WHERE owner = $1, ticker = $2", &[&owner, &ticker])
+                .execute(
+                    "DELETE FROM claims WHERE owner = $1, ticker = $2",
+                    &[&strategy, &ticker],
+                )
                 .await?
         }
     };

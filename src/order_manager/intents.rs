@@ -100,9 +100,10 @@ impl OrderManager {
             let pending_amount = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
             if pending_amount.is_zero() {
                 debug!("Cancelling claim that is no longer active");
-                db::delete_claims_by_owner_and_ticker(
+                db::delete_claims_by_strategy_and_ticker(
                     self.db_client.as_ref(),
-                    Owner::Strategy(intent.strategy.clone(), intent.sub_strategy.clone()),
+                    &intent.strategy,
+                    intent.sub_strategy.as_deref(),
                     ticker,
                 )
                 .await?;
