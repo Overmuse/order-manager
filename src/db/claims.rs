@@ -73,7 +73,7 @@ pub async fn delete_claims_by_strategy_and_ticker<T: GenericClient>(
         Some(sub_strategy) => {
             client
                 .execute(
-                    "DELETE FROM claims WHERE owner = $1 AND sub_owner = $2 AND, ticker = $3",
+                    "DELETE FROM claims WHERE owner = $1 AND sub_owner = $2 AND ticker = $3",
                     &[&strategy, &sub_strategy, &ticker],
                 )
                 .await?
@@ -81,7 +81,7 @@ pub async fn delete_claims_by_strategy_and_ticker<T: GenericClient>(
         None => {
             client
                 .execute(
-                    "DELETE FROM claims WHERE owner = $1 AND, ticker = $2",
+                    "DELETE FROM claims WHERE owner = $1 AND ticker = $2",
                     &[&strategy, &ticker],
                 )
                 .await?
