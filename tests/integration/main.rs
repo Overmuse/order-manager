@@ -557,30 +557,31 @@ async fn test_11(producer: &FutureProducer, consumer: &StreamConsumer) -> Result
         .key("")
         .payload(r#"{"state":"open","next_close":710}"#);
     producer.send_result(record).map_err(|x| x.0)?.await?.map_err(|x| x.0)?;
-    //let event = receive_event(&consumer).await?;
-    //let trade_intent = match event {
-    //    Event::TradeIntent(ti) => ti,
-    //    _ => return Err(anyhow!("Unexpected event")),
-    //};
-    //let client_order_id = trade_intent.id;
-    //let fill_message = OrderMessage {
-    //    client_order_id,
-    //    event_type: EventType::Fill,
-    //    ticker: "AAPL",
-    //    qty: 100,
-    //    position_qty: 200,
-    //    price: 100.0,
-    //    filled_qty: 100,
-    //    filled_avg_price: 100.0,
-    //    side: Side::Buy,
-    //    limit_price: None,
-    //};
+    let event = receive_event(&consumer).await?;
+    tracing::debug!(?event);
+    let trade_intent = match event {
+        Event::RiskCheckRequest(ti) => ti,
+        _ => return Err(anyhow!("Unexpected event")),
+    };
+    let client_order_id = trade_intent.id;
+    let fill_message = OrderMessage {
+        client_order_id,
+        event_type: EventType::Fill,
+        ticker: "AAPL",
+        qty: 100,
+        position_qty: 200,
+        price: 100.0,
+        filled_qty: 100,
+        filled_avg_price: 100.0,
+        side: Side::Buy,
+        limit_price: None,
+    };
 
-    //send_order_message(&producer, &fill_message).await?;
-    //let (lot, allocation) = receive_lot_and_allocation(&consumer).await?;
-    //assert_eq!(lot.shares, Decimal::new(100, 0));
-    //assert_eq!(allocation.shares, Decimal::new(100, 0));
-    //assert_eq!(allocation.owner, Owner::Strategy("S2".into(), None));
+    send_order_message(&producer, &fill_message).await?;
+    let (lot, allocation) = receive_lot_and_allocation(&consumer).await?;
+    assert_eq!(lot.shares, Decimal::new(100, 0));
+    assert_eq!(allocation.shares, Decimal::new(100, 0));
+    assert_eq!(allocation.owner, Owner::Strategy("S2".into(), None));
     Ok(())
 }
 

@@ -11,6 +11,7 @@ use trading_base::Amount;
 impl OrderManager {
     #[tracing::instrument(skip(self))]
     pub async fn reconcile(&self) -> Result<()> {
+        debug!("Running reconciliation checks");
         self.cancel_old_pending_trades().await?;
         self.reconcile_claims().await?;
         self.reconcile_house_positions().await
