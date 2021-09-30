@@ -95,7 +95,7 @@ impl OrderManager {
             }
             _ => (),
         }
-        Ok(())
+        self.reconcile().await
     }
 
     #[tracing::instrument(skip(self, ticker, timestamp, price, position_quantity))]
