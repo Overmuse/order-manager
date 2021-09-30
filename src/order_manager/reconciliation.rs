@@ -41,7 +41,7 @@ impl OrderManager {
             if pending_trade_amount.is_zero() {
                 debug!("Unfilled claim, sending new trade");
                 let maybe_trade = self
-                    .generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None, Some(claim.id))
+                    .generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None)
                     .await?;
                 if let Some(trade_intent) = maybe_trade {
                     self.event_sender.send(Event::RiskCheckRequest(trade_intent)).await?
@@ -65,13 +65,7 @@ impl OrderManager {
                     .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
                 shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
                 let maybe_trade = self
-                    .generate_trades(
-                        &position.ticker,
-                        &Amount::Shares(-shares_to_liquidate),
-                        None,
-                        None,
-                        None,
-                    )
+                    .generate_trades(&position.ticker, &Amount::Shares(-shares_to_liquidate), None, None)
                     .await?;
                 if let Some(intent) = maybe_trade {
                     self.event_sender.send(Event::RiskCheckRequest(intent)).await?

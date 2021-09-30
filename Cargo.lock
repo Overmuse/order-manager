@@ -1013,6 +1013,7 @@ dependencies = [
  "rdkafka",
  "redis",
  "refinery",
+ "reqwest",
  "risk-manager",
  "rust_decimal",
  "serde 1.0.127",
