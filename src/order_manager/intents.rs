@@ -160,7 +160,7 @@ impl OrderManager {
             Amount::Dollars(dollars) => {
                 let price = get_last_price(&self.datastore_url, ticker)
                     .await
-                    .map(|x| Some(x))
+                    .map(Some)
                     .unwrap_or(limit_price);
                 debug!(?price);
                 match price {
