@@ -1,6 +1,5 @@
 use crate::db;
 use crate::event_sender::Event;
-use crate::redis::Redis;
 use crate::settings::AppSettings;
 use crate::types::PendingTrade;
 use crate::EventSenderHandle;
@@ -25,7 +24,7 @@ pub struct OrderManager {
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
     event_sender: EventSenderHandle,
     db_client: Arc<Client>,
-    redis: Redis,
+    datastore_url: String,
     settings: AppSettings,
 }
 
@@ -36,7 +35,7 @@ impl OrderManager {
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
         event_sender: EventSenderHandle,
         db_client: Arc<Client>,
-        redis: Redis,
+        datastore_url: String,
         settings: AppSettings,
     ) -> Self {
         Self {
@@ -45,7 +44,7 @@ impl OrderManager {
             scheduler_receiver,
             event_sender,
             db_client,
-            redis,
+            datastore_url,
             settings,
         }
     }

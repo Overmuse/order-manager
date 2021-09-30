@@ -9,7 +9,6 @@ mod db;
 mod event_sender;
 mod intent_scheduler;
 pub mod order_manager;
-mod redis;
 mod settings;
 pub mod types;
 mod webserver;
@@ -40,7 +39,6 @@ pub async fn run(settings: Settings) -> Result<()> {
         }
     });
     embedded::migrations::runner().run_async(&mut client).await?;
-    let redis = redis::Redis::new(settings.redis)?;
     let client = Arc::new(client);
     let order_manager = OrderManager::new(
         consumer,
@@ -48,7 +46,7 @@ pub async fn run(settings: Settings) -> Result<()> {
         scheduled_intents_rx1,
         event_sender_handle,
         client.clone(),
-        redis,
+        settings.datastore.base_url,
         settings.app,
     );
     tokio::join!(

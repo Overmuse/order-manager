@@ -8,7 +8,6 @@ use num_traits::Signed;
 use rust_decimal::prelude::*;
 use tracing::{debug, trace, warn};
 use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, UpdatePolicy};
-use uuid::Uuid;
 
 pub(crate) trait PositionIntentExt {
     fn is_expired(&self) -> bool;
@@ -94,7 +93,6 @@ impl OrderManager {
         if !should_position_be_updated(intent, strategy_shares) {
             return Ok(None);
         }
-        let maybe_price = self.redis.get_latest_price(ticker).await?.or(intent.limit_price);
         if let Amount::Zero = intent.amount {
             // If there's no pending trades for ticker, cancel any claim for this strategy and ticker
             let pending_amount = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
@@ -109,13 +107,17 @@ impl OrderManager {
                 .await?;
             }
         }
+        let maybe_price = get_last_price(&self.datastore_url, ticker)
+            .await
+            .ok()
+            .or(intent.limit_price);
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
         match diff_amount {
             Some(amount) if !amount.is_zero() => {
                 let pending_trades = db::get_pending_trades_by_ticker(self.db_client.as_ref(), ticker).await?;
                 if !pending_trades.is_empty() {
                     let maybe_trade = self
-                        .generate_trades(ticker, &amount, intent.limit_price, intent.stop_price, None)
+                        .generate_trades(ticker, &amount, intent.limit_price, intent.stop_price)
                         .await?;
                     if let Some(trade) = maybe_trade {
                         let id = pending_trades.first().expect("Guaranteed to be non-empty").id;
@@ -134,14 +136,8 @@ impl OrderManager {
                     .await
                     .context("Failed to upsert claim")?;
                 self.event_sender.send(Event::Claim(claim.clone())).await?;
-                self.generate_trades(
-                    ticker,
-                    &claim.amount,
-                    intent.limit_price,
-                    intent.stop_price,
-                    Some(claim.id),
-                )
-                .await
+                self.generate_trades(ticker, &claim.amount, intent.limit_price, intent.stop_price)
+                    .await
             }
             _ => {
                 trace!("No trade generated");
@@ -157,19 +153,16 @@ impl OrderManager {
         amount: &Amount,
         limit_price: Option<Decimal>,
         stop_price: Option<Decimal>,
-        claim_id: Option<Uuid>,
     ) -> Result<Option<TradeIntent>> {
         let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
         let diff_shares = match amount {
             Amount::Shares(shares) => *shares,
             Amount::Dollars(dollars) => {
-                let price = self
-                    .redis
-                    .get::<Option<f64>>(&format!("price/{}", ticker))
-                    .await?
-                    .map(Decimal::from_f64)
-                    .flatten()
-                    .or(limit_price);
+                let price = get_last_price(&self.datastore_url, ticker)
+                    .await
+                    .map(Some)
+                    .unwrap_or(limit_price);
+                debug!(?price);
                 match price {
                     Some(price) => (dollars / price).round_dp(8),
                     None => {
@@ -351,6 +344,12 @@ fn make_trade_intent(
     )
     .order_type(order_type);
     Ok(intent)
+}
+
+async fn get_last_price(base_url: &str, ticker: &str) -> Result<Decimal> {
+    let url = format!("{}/last/{}", base_url, ticker);
+    let price: Decimal = reqwest::get(url).await?.json().await?;
+    Ok(price)
 }
 
 #[cfg(test)]

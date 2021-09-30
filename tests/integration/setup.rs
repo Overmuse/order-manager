@@ -80,7 +80,7 @@ pub async fn setup() -> (
         std::env::set_var("APP__UNREPORTED_TRADE_EXPIRY_SECONDS", "1");
         std::env::set_var("DATABASE__NAME", database_name);
         std::env::set_var("DATABASE__URL", database_address);
-        std::env::set_var("REDIS__URL", "redis://localhost:6379");
+        std::env::set_var("DATASTORE__BASE_URL", "http://localhost:9010");
         std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
         std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
         std::env::set_var(

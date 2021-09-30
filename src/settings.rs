@@ -14,8 +14,8 @@ pub struct Database {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RedisSettings {
-    pub url: String,
+pub struct DatastoreSettings {
+    pub base_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,7 +28,7 @@ pub struct Settings {
     pub app: AppSettings,
     pub database: Database,
     pub kafka: KafkaSettings,
-    pub redis: RedisSettings,
+    pub datastore: DatastoreSettings,
     pub webserver: WebServerSettings,
 }
 
