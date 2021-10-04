@@ -36,6 +36,12 @@ impl OrderManager {
         let claims = db::get_claims(self.db_client.as_ref()).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
         for claim in claims {
+            if let Some(before) = claim.before {
+                if before < Utc::now() {
+                    db::delete_claim_by_id(self.db_client.as_ref(), claim.id).await?;
+                    continue;
+                }
+            }
             let pending_trade_amount =
                 db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker).await?;
 

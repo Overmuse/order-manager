@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -14,6 +15,7 @@ pub struct Claim {
     pub ticker: String,
     pub amount: Amount,
     pub limit_price: Option<Decimal>,
+    pub before: Option<DateTime<Utc>>,
 }
 
 impl Claim {
@@ -24,6 +26,7 @@ impl Claim {
         ticker: String,
         amount: Amount,
         limit_price: Option<Decimal>,
+        before: Option<DateTime<Utc>>,
     ) -> Self {
         trace!(%strategy, ?sub_strategy, %ticker, ?amount, ?limit_price, "New Claim");
         Self {
@@ -33,6 +36,7 @@ impl Claim {
             ticker,
             amount,
             limit_price,
+            before,
         }
     }
 }
@@ -47,6 +51,7 @@ impl TryFrom<Row> for Claim {
             ticker: row.try_get("ticker")?,
             amount: unite_amount_spec(row.try_get("amount")?, row.try_get("unit")?),
             limit_price: row.try_get("limit_price")?,
+            before: row.try_get("before")?,
         })
     }
 }
