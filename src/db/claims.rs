@@ -96,7 +96,7 @@ pub async fn upsert_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result
     let (amount, unit) = split_amount_spec(&claim.amount);
     client
         .execute(
-            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit, limit_price) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (strategy, COALESCE(sub_strategy, ' '), ticker) WHERE sub_strategy IS NOT NULL DO UPDATE SET id = EXCLUDED.id, amount = EXCLUDED.amount, unit = EXCLUDED.unit, limit_price = EXCLUDED.limit_price;",
+            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit, limit_price, before) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (strategy, COALESCE(sub_strategy, ' '), ticker) WHERE sub_strategy IS NOT NULL DO UPDATE SET id = EXCLUDED.id, amount = EXCLUDED.amount, unit = EXCLUDED.unit, limit_price = EXCLUDED.limit_price, before = EXCLUDED.before;",
             &[
                 &claim.id,
                 &claim.strategy,
@@ -104,7 +104,8 @@ pub async fn upsert_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result
                 &claim.ticker,
                 &amount,
                 &unit,
-                &claim.limit_price
+                &claim.limit_price,
+                &claim.before
             ],
         )
         .await?;

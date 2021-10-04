@@ -131,6 +131,7 @@ impl OrderManager {
                     ticker.to_string(),
                     amount,
                     intent.limit_price,
+                    intent.before,
                 );
                 db::upsert_claim(self.db_client.as_ref(), &claim)
                     .await
@@ -262,6 +263,7 @@ impl OrderManager {
                 sub_strategy,
                 position.ticker.clone(),
                 Amount::Shares(-position.shares),
+                None,
                 None,
             );
             db::upsert_claim(self.db_client.as_ref(), &claim)
