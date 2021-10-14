@@ -64,18 +64,22 @@ impl OrderManager {
         let house_positions = house_positions.iter().filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
             if position.shares.abs() >= Decimal::ONE {
-                debug!(ticker = %position.ticker, shares = %position.shares, "Reducing size of house position");
+                let pending_trade_amount =
+                    db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &position.ticker).await?;
+                if pending_trade_amount.is_zero() {
+                    debug!(ticker = %position.ticker, shares = %position.shares, "Reducing size of house position");
 
-                // Since shares are stored with 8 decimal points of precision, adding 1e-9
-                // guarantees that we will be left with < 1 share in the house position.
-                let mut shares_to_liquidate = (position.shares.abs() - Decimal::ONE + Decimal::new(1, 9))
-                    .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
-                shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
-                let maybe_trade = self
-                    .generate_trades(&position.ticker, &Amount::Shares(-shares_to_liquidate), None, None)
-                    .await?;
-                if let Some(intent) = maybe_trade {
-                    self.event_sender.send(Event::RiskCheckRequest(intent)).await?
+                    // Since shares are stored with 8 decimal points of precision, adding 1e-9
+                    // guarantees that we will be left with < 1 share in the house position.
+                    let mut shares_to_liquidate = (position.shares.abs() - Decimal::ONE + Decimal::new(1, 9))
+                        .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
+                    shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
+                    let maybe_trade = self
+                        .generate_trades(&position.ticker, &Amount::Shares(-shares_to_liquidate), None, None)
+                        .await?;
+                    if let Some(intent) = maybe_trade {
+                        self.event_sender.send(Event::RiskCheckRequest(intent)).await?
+                    }
                 }
             }
         }
