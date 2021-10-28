@@ -7,7 +7,7 @@ use rdkafka::Message;
 use risk_manager::RiskCheckResponse;
 use rust_decimal::Decimal;
 use tracing::info;
-use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, UpdatePolicy};
+use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, TradeMessage, UpdatePolicy};
 
 use order_manager::types::{Allocation, Claim, Lot, Owner};
 use order_manager::Event;
@@ -56,8 +56,8 @@ async fn receive_event(consumer: &StreamConsumer) -> Result<Event> {
             Event::RiskCheckRequest(intent)
         }
         "trade-intents" => {
-            let intent: TradeIntent = serde_json::from_slice(payload)?;
-            Event::TradeIntent(intent)
+            let message: TradeMessage = serde_json::from_slice(payload)?;
+            Event::TradeMessage(message)
         }
         _ => {
             unreachable!()
@@ -83,8 +83,8 @@ async fn receive_claim_and_risk_check_request(consumer: &StreamConsumer) -> Resu
 async fn receive_claim_and_trade_intent(consumer: &StreamConsumer) -> Result<(Claim, TradeIntent)> {
     let events = tokio::try_join!(receive_event(&consumer), receive_event(&consumer))?;
     match events {
-        (Event::Claim(c), Event::TradeIntent(ti)) => Ok((c, ti)),
-        (Event::TradeIntent(ti), Event::Claim(c)) => Ok((c, ti)),
+        (Event::Claim(c), Event::TradeMessage(TradeMessage::New { intent })) => Ok((c, intent)),
+        (Event::TradeMessage(TradeMessage::New { intent }), Event::Claim(c)) => Ok((c, intent)),
         x => {
             return Err(anyhow!(
                 "Unexpected events: was expecting a Claim and TradeIntent. Events {:?}",
@@ -262,7 +262,7 @@ async fn test_3(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<
 
     let event = receive_event(&consumer).await?;
     let trade_intent = match event {
-        Event::TradeIntent(ti) => ti,
+        Event::TradeMessage(TradeMessage::New { intent }) => intent,
         _ => return Err(anyhow!("Unexpected event")),
     };
 

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{debug, error, info};
-use trading_base::{PositionIntent, TradeIntent};
+use trading_base::{PositionIntent, TradeIntent, TradeMessage};
 
 mod dependent_trades;
 mod input;
@@ -75,16 +75,16 @@ impl OrderManager {
         Ok(())
     }
 
-    async fn send_trade(&self, trade: TradeIntent) -> Result<()> {
+    async fn send_trade(&self, intent: TradeIntent) -> Result<()> {
         db::save_pending_trade(
             self.db_client.as_ref(),
-            PendingTrade::new(trade.id, trade.ticker.clone(), trade.qty as i32),
+            PendingTrade::new(intent.id, intent.ticker.clone(), intent.qty as i32),
         )
         .await
         .context("Failed to save pending trade")?;
 
         self.event_sender
-            .send(Event::TradeIntent(trade))
+            .send(Event::TradeMessage(TradeMessage::New { intent }))
             .await
             .context("Failed to send trade")?;
         Ok(())
