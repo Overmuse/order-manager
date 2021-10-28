@@ -28,25 +28,21 @@ impl OrderManager {
         debug!(status = ?event.event, "Order status update");
         match event.event {
             AlpacaEvent::New => {
-                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Accepted).await?;
+                db::update_status(self.db_client.as_ref(), id, Status::Accepted).await?;
             }
-            AlpacaEvent::Canceled { .. } | AlpacaEvent::Expired { .. } | AlpacaEvent::Rejected { .. } => {
-                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Dead).await?;
-                db::delete_pending_trade_by_id(self.db_client.as_ref(), id)
-                    .await
-                    .context("Failed to delete pending trade")?;
+            AlpacaEvent::Canceled { .. } => {
+                db::update_status(self.db_client.as_ref(), id, Status::Cancelled).await?;
+            }
+            AlpacaEvent::Expired { .. } | AlpacaEvent::Rejected { .. } => {
+                db::update_status(self.db_client.as_ref(), id, Status::Dead).await?;
             }
             AlpacaEvent::Fill { timestamp, .. } => {
                 debug!("Order filled");
-                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::Filled).await?;
+                db::update_status(self.db_client.as_ref(), id, Status::Filled).await?;
                 let new_lot = self
                     .make_lot(id, ticker, timestamp, price, qty)
                     .await
                     .context("Failed to make lot")?;
-                debug!("Deleting pending trade");
-                db::delete_pending_trade_by_id(self.db_client.as_ref(), id)
-                    .await
-                    .context("Failed to delete pending trade")?;
                 debug!("Saving lot");
                 db::save_lot(self.db_client.as_ref(), &new_lot)
                     .await
@@ -60,8 +56,8 @@ impl OrderManager {
                     .context("Failed to trigger dependent-trades")?
             }
             AlpacaEvent::PartialFill { timestamp, .. } => {
-                db::update_pending_trade_status(self.db_client.as_ref(), id, Status::PartiallyFilled).await?;
-                let pending_trade = db::get_pending_trade_by_id(self.db_client.as_ref(), id)
+                db::update_status(self.db_client.as_ref(), id, Status::PartiallyFilled).await?;
+                let trade = db::get_trade_by_id(self.db_client.as_ref(), id)
                     .await
                     .context("Failed to get pending trade")?
                     .ok_or_else(|| anyhow!("Partial fill received without seeing `new` event"))?;
@@ -79,8 +75,8 @@ impl OrderManager {
                             .ok_or_else(|| anyhow!("Failed to convert Decimal"))?)
                     }
                 };
-                let pending_qty = pending_trade.quantity - filled_qty as i32;
-                db::update_pending_trade_quantity(self.db_client.as_ref(), id, pending_qty)
+                let pending_qty = trade.quantity - filled_qty as i32;
+                db::update_trade_quantity(self.db_client.as_ref(), id, pending_qty)
                     .await
                     .context("Failed to update pending trade quantity")?;
                 let new_lot = self

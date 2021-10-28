@@ -41,9 +41,9 @@ async fn get_claims(db: Db) -> Result<impl Reply, Rejection> {
 }
 
 #[tracing::instrument(skip(db))]
-async fn get_pending_trades(db: Db) -> Result<impl Reply, Rejection> {
-    let pending_trades = db::get_pending_trades(db.as_ref()).await.map_err(|_| reject())?;
-    Ok(json(&pending_trades))
+async fn get_trades(db: Db) -> Result<impl Reply, Rejection> {
+    let trades = db::get_trades(db.as_ref()).await.map_err(|_| reject())?;
+    Ok(json(&trades))
 }
 
 #[tracing::instrument(skip(db))]
@@ -63,7 +63,7 @@ pub async fn run(port: u16, db: Db) {
     let pending_trades = path("pending_trades")
         .and(get())
         .and(with_db(db.clone()))
-        .and_then(get_pending_trades);
+        .and_then(get_trades);
     let routes = get()
         .and(health)
         .or(get_allocations)
