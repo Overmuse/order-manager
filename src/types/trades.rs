@@ -74,11 +74,10 @@ impl Trade {
     }
 
     pub fn is_active(&self) -> bool {
-        if let Status::Unreported | Status::Accepted | Status::PartiallyFilled = self.status {
-            true
-        } else {
-            false
-        }
+        matches!(
+            self.status,
+            Status::Unreported | Status::Accepted | Status::PartiallyFilled,
+        )
     }
 }
 
