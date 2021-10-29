@@ -1,7 +1,7 @@
 use super::OrderManager;
 use crate::db;
 use crate::event_sender::Event;
-use crate::types::{calculate_claim_amount, Claim, Owner, Position};
+use crate::types::{calculate_claim_amount, Claim, Owner, Position, Trade};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
@@ -94,9 +94,9 @@ impl OrderManager {
             return Ok(None);
         }
         if let Amount::Zero = intent.amount {
-            // If there's no pending trades for ticker, cancel any claim for this strategy and ticker
-            let pending_amount = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
-            if pending_amount.is_zero() {
+            // If there's no active trades for ticker, cancel any claim for this strategy and ticker
+            let active_amount = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
+            if active_amount.is_zero() {
                 debug!("Cancelling claim that is no longer active");
                 db::delete_claims_by_strategy_and_ticker(
                     self.db_client.as_ref(),
@@ -114,13 +114,17 @@ impl OrderManager {
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
         match diff_amount {
             Some(amount) if !amount.is_zero() => {
-                let pending_trades = db::get_pending_trades_by_ticker(self.db_client.as_ref(), ticker).await?;
-                if !pending_trades.is_empty() {
+                let active_trades: Vec<_> = db::get_trades_by_ticker(self.db_client.as_ref(), ticker)
+                    .await?
+                    .into_iter()
+                    .filter(Trade::is_active)
+                    .collect();
+                if !active_trades.is_empty() {
                     let maybe_trade = self
                         .generate_trades(ticker, &amount, intent.limit_price, intent.stop_price)
                         .await?;
                     if let Some(trade) = maybe_trade {
-                        let id = pending_trades.first().expect("Guaranteed to be non-empty").id;
+                        let id = active_trades.first().expect("Guaranteed to be non-empty").id;
                         db::save_dependent_trade(self.db_client.as_ref(), id, &trade).await?
                     }
                     return Ok(None);
@@ -174,16 +178,16 @@ impl OrderManager {
             }
             _ => unreachable!(),
         };
-        let pending_shares: Decimal = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
             .await
-            .context("Failed to get pending trade amount")?
+            .context("Failed to get active trade amount")?
             .into();
         let owned_shares: Decimal = positions.iter().map(|pos| pos.shares).sum();
 
         let (sent, maybe_saved) = make_trades(
             ticker,
             diff_shares,
-            owned_shares + pending_shares,
+            owned_shares + active_shares,
             limit_price,
             stop_price,
         )?;
@@ -238,15 +242,15 @@ impl OrderManager {
     pub async fn close_position(&self, position: Position) -> Result<()> {
         let ticker = &position.ticker;
         let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
-        let pending_shares: Decimal = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
             .await
-            .context("Failed to get pending trade amount")?
+            .context("Failed to get active trade amount")?
             .into();
         let owned_shares: Decimal = positions.iter().map(|pos| pos.shares).sum();
         let (sent, maybe_saved) = make_trades(
             &position.ticker,
             -position.shares,
-            owned_shares + pending_shares,
+            owned_shares + active_shares,
             None,
             None,
         )?;

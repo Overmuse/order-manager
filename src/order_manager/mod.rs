@@ -1,7 +1,7 @@
 use crate::db;
 use crate::event_sender::Event;
 use crate::settings::AppSettings;
-use crate::types::PendingTrade;
+use crate::types::Trade;
 use crate::EventSenderHandle;
 use anyhow::{Context, Result};
 use rdkafka::consumer::StreamConsumer;
@@ -9,7 +9,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_postgres::Client;
 use tracing::{debug, error, info};
-use trading_base::{PositionIntent, TradeIntent};
+use trading_base::{PositionIntent, TradeIntent, TradeMessage};
+use uuid::Uuid;
 
 mod dependent_trades;
 mod input;
@@ -75,18 +76,26 @@ impl OrderManager {
         Ok(())
     }
 
-    async fn send_trade(&self, trade: TradeIntent) -> Result<()> {
-        db::save_pending_trade(
+    async fn send_trade(&self, intent: TradeIntent) -> Result<()> {
+        db::save_trade(
             self.db_client.as_ref(),
-            PendingTrade::new(trade.id, trade.ticker.clone(), trade.qty as i32),
+            Trade::new(intent.id, intent.ticker.clone(), intent.qty as i32),
         )
         .await
         .context("Failed to save pending trade")?;
 
         self.event_sender
-            .send(Event::TradeIntent(trade))
+            .send(Event::TradeMessage(TradeMessage::New { intent }))
             .await
             .context("Failed to send trade")?;
+        Ok(())
+    }
+
+    async fn cancel_trade(&self, broker_id: Uuid) -> Result<()> {
+        self.event_sender
+            .send(Event::TradeMessage(TradeMessage::Cancel { id: broker_id }))
+            .await
+            .context("Failed to send cancellation message")?;
         Ok(())
     }
 }
