@@ -1,5 +1,12 @@
 # Changelog
 
+### [12.0.1](https://www.github.com/Overmuse/order-manager/compare/v12.0.0...v12.0.1) (2021-10-29)
+
+
+### Bug Fixes
+
+* use tag-name for creating ecr images ([3c3c18f](https://www.github.com/Overmuse/order-manager/commit/3c3c18f01611deb9305ee359046a08c92eef3071))
+
 ## [12.0.0](https://www.github.com/Overmuse/order-manager/compare/v11.3.1...v12.0.0) (2021-10-29)
 
 
