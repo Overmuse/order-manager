@@ -1,5 +1,12 @@
 # Changelog
 
+### [12.0.2](https://www.github.com/Overmuse/order-manager/compare/v12.0.1...v12.0.2) (2021-10-29)
+
+
+### Bug Fixes
+
+* Improve order-management and classification ([a682589](https://www.github.com/Overmuse/order-manager/commit/a6825899b4510ddbbf000c69ffe95eb598dd5c64))
+
 ### [12.0.1](https://www.github.com/Overmuse/order-manager/compare/v12.0.0...v12.0.1) (2021-10-29)
 
 
