@@ -79,7 +79,7 @@ pub async fn update_status<T: GenericClient>(client: &T, id: Uuid, status: Statu
 pub async fn save_trade<T: GenericClient>(client: &T, trade: Trade) -> Result<()> {
     trace!(id = %trade.id, "Saving trade");
     client.execute(
-        "INSERT INTO trades (id, broker_id, ticker, quantity, pending_quantity, datetime, status) VALUES ($1, $2, $3, $4, $5, $6, $7)", 
+        "INSERT INTO trades (id, broker_id, ticker, quantity, pending_quantity, datetime, status) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO UPDATE SET broker_id = EXCLUDED.broker_id, pending_quantity = EXCLUDED.pending_quantity, status = EXCLUDED.status;",
         &[
             &trade.id,
             &trade.broker_id,

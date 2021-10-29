@@ -1,3 +1,4 @@
+use alpaca::{Order, OrderStatus, Side};
 use chrono::{DateTime, Utc};
 use postgres_types::{FromSql, ToSql};
 use serde::Serialize;
@@ -78,6 +79,34 @@ impl Trade {
             self.status,
             Status::Unreported | Status::Accepted | Status::PartiallyFilled,
         )
+    }
+}
+
+impl From<Order> for Trade {
+    fn from(order: Order) -> Trade {
+        let (quantity, pending_quantity) = match order.side {
+            Side::Buy => (order.qty as i32, (order.qty - order.filled_qty) as i32),
+            Side::Sell => (-(order.qty as i32), -((order.qty - order.filled_qty) as i32)),
+        };
+        let status = match order.status {
+            OrderStatus::Canceled => Status::Cancelled,
+            OrderStatus::Filled => Status::Filled,
+            OrderStatus::PartiallyFilled => Status::PartiallyFilled,
+            OrderStatus::Expired | OrderStatus::Replaced | OrderStatus::Rejected | OrderStatus::Suspended => {
+                Status::Dead
+            }
+            _ => Status::Accepted,
+        };
+
+        Trade {
+            id: Uuid::parse_str(&order.client_order_id).expect("Failed to convert id to UUID"),
+            broker_id: Some(order.id),
+            ticker: order.symbol,
+            quantity,
+            pending_quantity,
+            datetime: order.created_at,
+            status,
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use super::OrderManager;
 use crate::db;
 use crate::event_sender::Event;
-use crate::types::{split_lot, Allocation, Lot, Status};
+use crate::types::{split_lot, Allocation, Lot};
 use alpaca::{Event as AlpacaEvent, OrderEvent, Side};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -15,7 +15,7 @@ impl OrderManager {
     pub async fn handle_order_update(&self, event: OrderEvent) -> Result<()> {
         debug!("Handling order update");
         let id = Uuid::parse_str(&event.order.client_order_id)?;
-        let ticker = &event.order.symbol;
+        let ticker = event.order.symbol.clone();
         let price = event.order.filled_avg_price.unwrap_or(Decimal::ONE);
         let qty = match event.order.side {
             Side::Buy => {
@@ -28,19 +28,19 @@ impl OrderManager {
         debug!(status = ?event.event, "Order status update");
         match event.event {
             AlpacaEvent::New => {
-                db::update_status(self.db_client.as_ref(), id, Status::Accepted).await?;
+                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
             }
             AlpacaEvent::Canceled { .. } => {
-                db::update_status(self.db_client.as_ref(), id, Status::Cancelled).await?;
+                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
             }
             AlpacaEvent::Expired { .. } | AlpacaEvent::Rejected { .. } => {
-                db::update_status(self.db_client.as_ref(), id, Status::Dead).await?;
+                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
             }
             AlpacaEvent::Fill { timestamp, .. } => {
                 debug!("Order filled");
-                db::update_status(self.db_client.as_ref(), id, Status::Filled).await?;
+                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
                 let new_lot = self
-                    .make_lot(id, ticker, timestamp, price, qty)
+                    .make_lot(id, &ticker, timestamp, price, qty)
                     .await
                     .context("Failed to make lot")?;
                 debug!("Saving lot");
@@ -56,31 +56,9 @@ impl OrderManager {
                     .context("Failed to trigger dependent-trades")?
             }
             AlpacaEvent::PartialFill { timestamp, .. } => {
-                db::update_status(self.db_client.as_ref(), id, Status::PartiallyFilled).await?;
-                let trade = db::get_trade_by_id(self.db_client.as_ref(), id)
-                    .await
-                    .context("Failed to get pending trade")?
-                    .ok_or_else(|| anyhow!("Partial fill received without seeing `new` event"))?;
-                let filled_qty = match event.order.side {
-                    Side::Buy => event
-                        .order
-                        .filled_qty
-                        .to_isize()
-                        .ok_or_else(|| anyhow!("Failed to convert Decimal"))?,
-                    Side::Sell => {
-                        -(event
-                            .order
-                            .filled_qty
-                            .to_isize()
-                            .ok_or_else(|| anyhow!("Failed to convert Decimal"))?)
-                    }
-                };
-                let pending_qty = trade.quantity - filled_qty as i32;
-                db::update_trade_quantity(self.db_client.as_ref(), id, pending_qty)
-                    .await
-                    .context("Failed to update pending trade quantity")?;
+                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
                 let new_lot = self
-                    .make_lot(id, ticker, timestamp, price, qty)
+                    .make_lot(id, &ticker, timestamp, price, qty)
                     .await
                     .context("Failed to make lot")?;
                 db::save_lot(self.db_client.as_ref(), &new_lot)
