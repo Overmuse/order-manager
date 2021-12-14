@@ -50,7 +50,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "tokio-tungstenite 0.15.0",
+ "tokio-tungstenite",
  "tracing",
  "uuid",
 ]
@@ -68,7 +68,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "tokio-tungstenite 0.15.0",
+ "tokio-tungstenite",
  "tracing",
  "uuid",
 ]
@@ -811,15 +811,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "input_buffer"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f97967975f448f1a7ddb12b0bc41069d09ed6a1c161a92687e057325db35d413"
-dependencies = [
- "bytes",
-]
-
-[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1276,7 +1267,6 @@ dependencies = [
  "mobc-redis",
  "num-traits 0.2.14",
  "once_cell",
- "polygon",
  "postgres-types",
  "rdkafka",
  "redis",
@@ -1387,25 +1377,6 @@ name = "pkg-config"
 version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58893f751c9b0412871a09abd62ecd2a00298c6c83befa223ef98c52aef40cbe"
-
-[[package]]
-name = "polygon"
-version = "0.11.0"
-source = "git+ssh://git@github.com/Overmuse/polygon?tag=v0.11.0#5defbad3e5f3a39958a767c47381aae10fdb2be5"
-dependencies = [
- "chrono",
- "futures",
- "itertools",
- "reqwest",
- "rust_decimal",
- "serde 1.0.131",
- "serde_json",
- "serde_repr",
- "thiserror",
- "tokio",
- "tokio-tungstenite 0.13.0",
- "tracing",
-]
 
 [[package]]
 name = "postgres"
@@ -2073,17 +2044,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_repr"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98d0516900518c29efa217c298fa1f4e6c6ffc85ae29fd7f4ee48f176e1a9ed5"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "serde_urlencoded"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2470,21 +2430,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1a5f475f1b9d077ea1017ecbc60890fda8e54942d680ca0b1d2b47cfa2d861b"
-dependencies = [
- "futures-util",
- "log",
- "native-tls",
- "pin-project",
- "tokio",
- "tokio-native-tls",
- "tungstenite 0.12.0",
-]
-
-[[package]]
-name = "tokio-tungstenite"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "511de3f85caf1c98983545490c3d09685fa8eb634e57eec22bb4db271f46cbd8"
@@ -2495,7 +2440,7 @@ dependencies = [
  "rustls",
  "tokio",
  "tokio-rustls",
- "tungstenite 0.14.0",
+ "tungstenite",
  "webpki",
  "webpki-roots",
 ]
@@ -2623,26 +2568,6 @@ name = "try-lock"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
-
-[[package]]
-name = "tungstenite"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ada8297e8d70872fa9a551d93250a9f407beb9f37ef86494eb20012a2ff7c24"
-dependencies = [
- "base64",
- "byteorder",
- "bytes",
- "http",
- "httparse",
- "input_buffer",
- "log",
- "native-tls",
- "rand",
- "sha-1",
- "url",
- "utf-8",
-]
 
 [[package]]
 name = "tungstenite"
@@ -2824,7 +2749,7 @@ dependencies = [
  "serde_urlencoded",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite 0.15.0",
+ "tokio-tungstenite",
  "tokio-util",
  "tower-service",
  "tracing",
