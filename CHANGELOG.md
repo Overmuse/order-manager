@@ -1,5 +1,12 @@
 # Changelog
 
+## [12.1.0](https://www.github.com/Overmuse/order-manager/compare/v12.0.2...v12.1.0) (2021-12-08)
+
+
+### Features
+
+* Add sentry integration ([c914641](https://www.github.com/Overmuse/order-manager/commit/c914641ddd50433d3c4d3f8e596e80422f3fda35))
+
 ### [12.0.2](https://www.github.com/Overmuse/order-manager/compare/v12.0.1...v12.0.2) (2021-10-29)
 
 
