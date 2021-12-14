@@ -40,8 +40,6 @@ jobs:
         run: ./scripts/init_kafka.sh
       - name: Initiate postgres
         run: ./scripts/init_db.sh
-      - name: Initiate redis
-        run: ./scripts/init_redis.sh
       - name: Run tests 
         run: cargo test 
 
