@@ -1,5 +1,12 @@
 # Changelog
 
+### [12.1.1](https://www.github.com/Overmuse/order-manager/compare/v12.1.0...v12.1.1) (2021-12-14)
+
+
+### Miscellaneous Chores
+
+* release 12.1.1 ([9b725ee](https://www.github.com/Overmuse/order-manager/commit/9b725eef94ebaa8ac244db188c29be9240e8ade2))
+
 ## [12.1.0](https://www.github.com/Overmuse/order-manager/compare/v12.0.2...v12.1.0) (2021-12-08)
 
 
