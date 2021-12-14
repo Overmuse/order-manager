@@ -3,7 +3,7 @@ use crate::db;
 use crate::event_sender::Event;
 use crate::types::{split_lot, Allocation, Lot};
 use alpaca::{Event as AlpacaEvent, OrderEvent, Side};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::*;
 use tracing::debug;
@@ -16,15 +16,6 @@ impl OrderManager {
         debug!("Handling order update");
         let id = Uuid::parse_str(&event.order.client_order_id)?;
         let ticker = event.order.symbol.clone();
-        let price = event.order.filled_avg_price.unwrap_or(Decimal::ONE);
-        let qty = match event.order.side {
-            Side::Buy => {
-                Decimal::from_usize(event.order.filled_qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?
-            }
-            Side::Sell => {
-                -Decimal::from_usize(event.order.filled_qty).ok_or_else(|| anyhow!("Failed to convert Decimal"))?
-            }
-        };
         debug!(status = ?event.event, "Order status update");
         match event.event {
             AlpacaEvent::New => {
@@ -36,8 +27,14 @@ impl OrderManager {
             AlpacaEvent::Expired { .. } | AlpacaEvent::Rejected { .. } => {
                 db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
             }
-            AlpacaEvent::Fill { timestamp, .. } => {
+            AlpacaEvent::Fill {
+                timestamp, qty, price, ..
+            } => {
                 debug!("Order filled");
+                let qty = match event.order.side {
+                    Side::Buy => Decimal::from_isize(qty).unwrap(),
+                    Side::Sell => -Decimal::from_isize(qty).unwrap(),
+                };
                 db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
                 let new_lot = self
                     .make_lot(id, &ticker, timestamp, price, qty)
@@ -55,7 +52,13 @@ impl OrderManager {
                     .await
                     .context("Failed to trigger dependent-trades")?
             }
-            AlpacaEvent::PartialFill { timestamp, .. } => {
+            AlpacaEvent::PartialFill {
+                timestamp, qty, price, ..
+            } => {
+                let qty = match event.order.side {
+                    Side::Buy => Decimal::from_isize(qty).unwrap(),
+                    Side::Sell => -Decimal::from_isize(qty).unwrap(),
+                };
                 db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
                 let new_lot = self
                     .make_lot(id, &ticker, timestamp, price, qty)
@@ -72,21 +75,15 @@ impl OrderManager {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, ticker, timestamp, price, position_quantity))]
+    #[tracing::instrument(skip(self, ticker, timestamp, price, quantity))]
     async fn make_lot(
         &self,
         id: Uuid,
         ticker: &str,
         timestamp: DateTime<Utc>,
         price: Decimal,
-        position_quantity: Decimal,
+        quantity: Decimal,
     ) -> Result<Lot> {
-        let previous_lots = db::get_lots_by_order_id(self.db_client.as_ref(), id)
-            .await
-            .context("Failed to get lots")?;
-        let (previous_quantity, previous_price) = aggregate_previous_lots(&previous_lots);
-        let (quantity, price) =
-            calculate_lot_quantity_and_price(previous_quantity, previous_price, position_quantity, price);
         Ok(Lot::new(id, ticker.to_string(), timestamp, price, quantity))
     }
 
@@ -132,61 +129,5 @@ fn calculate_claim_adjustment_amount(claim_amount: &Amount, allocation: &Allocat
             Amount::Shares(new_shares)
         }
         _ => unimplemented!(),
-    }
-}
-
-fn aggregate_previous_lots(lots: &[Lot]) -> (Decimal, Decimal) {
-    lots.iter().fold((Decimal::ZERO, Decimal::ONE), |(shares, price), lot| {
-        (
-            shares + lot.shares,
-            ((price * shares + lot.price * lot.shares) / (shares + lot.shares)).round_dp(8),
-        )
-    })
-}
-
-/// Calculates the incremental lot quantity and price given an old cumulative share count and fill
-/// price and new ones.
-fn calculate_lot_quantity_and_price(
-    old_quantity: Decimal,
-    old_price: Decimal,
-    new_quantity: Decimal,
-    new_price: Decimal,
-) -> (Decimal, Decimal) {
-    let quantity = new_quantity - old_quantity;
-    let price = ((new_price * new_quantity - old_price * old_quantity) / quantity).round_dp(8);
-    (quantity, price)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    const ORDER_ID: Uuid = Uuid::nil();
-
-    fn lot(shares: Decimal, price: Decimal) -> Lot {
-        Lot::new(ORDER_ID, "TICK".to_string(), Utc::now(), price, shares)
-    }
-
-    #[test]
-    fn test_lot_aggregation() {
-        let previous_lots = [
-            lot(Decimal::ONE, Decimal::new(111, 0)),
-            lot(Decimal::TWO, Decimal::new(101, 0)),
-            lot(Decimal::TEN, Decimal::new(100, 0)),
-        ];
-        let (qty, price) = aggregate_previous_lots(&previous_lots);
-        assert_eq!(qty, Decimal::new(13, 0));
-        assert_eq!(price, Decimal::new(101, 0));
-    }
-
-    #[test]
-    fn test_lot_calculation() {
-        let (q, p) = calculate_lot_quantity_and_price(Decimal::ZERO, Decimal::ONE, Decimal::TWO, Decimal::ONE_HUNDRED);
-        assert_eq!(q, Decimal::TWO);
-        assert_eq!(p, Decimal::ONE_HUNDRED);
-
-        let (q2, p2) = calculate_lot_quantity_and_price(q, p, Decimal::TEN, Decimal::ONE_THOUSAND);
-        assert_eq!(q2, Decimal::new(8, 0));
-        assert_eq!(p2, Decimal::new(1225, 0));
     }
 }
