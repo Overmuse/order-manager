@@ -12,8 +12,10 @@ mod helpers;
 #[tokio::test]
 async fn one_position_intent_leads_to_one_trade() -> Result<()> {
     let app = spawn_app().await;
+    tracing::info!("App spawned, ready to roll!");
     app.send_position(&PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0))).build()?)
         .await?;
+    tracing::info!("POSITIONS SENT");
     let (claim, trade_intent) = app.receive_claim_and_risk_check_request().await?;
     assert_eq!(claim.amount, Amount::Shares(Decimal::ONE_HUNDRED));
     assert_eq!(trade_intent.qty, 100);
@@ -42,61 +44,61 @@ async fn one_position_intent_leads_to_one_trade() -> Result<()> {
     Ok(())
 }
 
-/// An additional position intent leads to an trade intent with only the _net_ size
-/// difference.
-#[tokio::test]
-async fn new_position_leads_to_net_trade_size() -> Result<()> {
-    let app = spawn_app().await;
-    app.send_position(&PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0))).build()?)
-        .await?;
-    let (_, trade_intent) = app.receive_claim_and_risk_check_request().await?;
-    let client_order_id = trade_intent.id;
-    let response = RiskCheckResponse::Granted { intent: trade_intent };
-    app.send_risk_check_response(&response).await?;
-    app.receive_event().await?;
-    let fill_message = OrderMessage {
-        client_order_id,
-        event_type: EventType::Fill,
-        ticker: "AAPL",
-        qty: 100,
-        position_qty: 100,
-        price: 100.0,
-        filled_qty: 100,
-        filled_avg_price: 100.0,
-        side: Side::Buy,
-        limit_price: None,
-    };
-    app.send_order_message(&fill_message).await?;
-    app.receive_lot_and_allocation().await?;
-
-    app.send_position(&PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(150, 0))).build()?)
-        .await?;
-    let (claim, trade_intent) = app.receive_claim_and_risk_check_request().await?;
-    assert_eq!(claim.amount, Amount::Shares(Decimal::new(50, 0)));
-    assert_eq!(trade_intent.qty, 50);
-    let client_order_id = trade_intent.id;
-    let response = RiskCheckResponse::Granted { intent: trade_intent };
-    app.send_risk_check_response(&response).await?;
-    let _trade_intent = app.receive_event().await?;
-    let fill_message = OrderMessage {
-        client_order_id,
-        event_type: EventType::Fill,
-        ticker: "AAPL",
-        qty: 50,
-        position_qty: 150,
-        price: 100.0,
-        filled_qty: 50,
-        filled_avg_price: 100.0,
-        side: Side::Buy,
-        limit_price: None,
-    };
-    app.send_order_message(&fill_message).await?;
-    let (lot, allocation) = app.receive_lot_and_allocation().await?;
-    assert_eq!(lot.shares, Decimal::new(50, 0));
-    assert_eq!(allocation.shares, Decimal::new(50, 0));
-    assert_eq!(allocation.owner, Owner::Strategy("S1".into(), None));
-    Ok(())
-}
+// /// An additional position intent leads to an trade intent with only the _net_ size
+// /// difference.
+// #[tokio::test]
+// async fn new_position_leads_to_net_trade_size() -> Result<()> {
+//     let app = spawn_app().await;
+//     app.send_position(&PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(100, 0))).build()?)
+//         .await?;
+//     let (_, trade_intent) = app.receive_claim_and_risk_check_request().await?;
+//     let client_order_id = trade_intent.id;
+//     let response = RiskCheckResponse::Granted { intent: trade_intent };
+//     app.send_risk_check_response(&response).await?;
+//     app.receive_event().await?;
+//     let fill_message = OrderMessage {
+//         client_order_id,
+//         event_type: EventType::Fill,
+//         ticker: "AAPL",
+//         qty: 100,
+//         position_qty: 100,
+//         price: 100.0,
+//         filled_qty: 100,
+//         filled_avg_price: 100.0,
+//         side: Side::Buy,
+//         limit_price: None,
+//     };
+//     app.send_order_message(&fill_message).await?;
+//     app.receive_lot_and_allocation().await?;
+//
+//     app.send_position(&PositionIntent::builder("S1", "AAPL", Amount::Shares(Decimal::new(150, 0))).build()?)
+//         .await?;
+//     let (claim, trade_intent) = app.receive_claim_and_risk_check_request().await?;
+//     assert_eq!(claim.amount, Amount::Shares(Decimal::new(50, 0)));
+//     assert_eq!(trade_intent.qty, 50);
+//     let client_order_id = trade_intent.id;
+//     let response = RiskCheckResponse::Granted { intent: trade_intent };
+//     app.send_risk_check_response(&response).await?;
+//     let _trade_intent = app.receive_event().await?;
+//     let fill_message = OrderMessage {
+//         client_order_id,
+//         event_type: EventType::Fill,
+//         ticker: "AAPL",
+//         qty: 50,
+//         position_qty: 150,
+//         price: 100.0,
+//         filled_qty: 50,
+//         filled_avg_price: 100.0,
+//         side: Side::Buy,
+//         limit_price: None,
+//     };
+//     app.send_order_message(&fill_message).await?;
+//     let (lot, allocation) = app.receive_lot_and_allocation().await?;
+//     assert_eq!(lot.shares, Decimal::new(50, 0));
+//     assert_eq!(allocation.shares, Decimal::new(50, 0));
+//     assert_eq!(allocation.owner, Owner::Strategy("S1".into(), None));
+//     Ok(())
+// }
 
 ///// A change in net side generates one initial trade and one additional trade
 //async fn test_3(producer: &FutureProducer, consumer: &StreamConsumer) -> Result<()> {

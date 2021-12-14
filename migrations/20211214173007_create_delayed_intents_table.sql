@@ -1,3 +1,4 @@
+-- Add migration script here
 CREATE TABLE IF NOT EXISTS scheduled_intents
 (
     id             UUID PRIMARY KEY,

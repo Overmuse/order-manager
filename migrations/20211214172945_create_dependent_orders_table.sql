@@ -1,3 +1,4 @@
+-- Add migration script here
 CREATE TABLE IF NOT EXISTS dependent_orders 
 (
     dependent_id    TEXT    NOT NULL,

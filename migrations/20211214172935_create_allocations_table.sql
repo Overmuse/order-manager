@@ -1,3 +1,4 @@
+-- Add migration script here
 CREATE TABLE IF NOT EXISTS allocations
 (
     owner     TEXT NOT NULL,

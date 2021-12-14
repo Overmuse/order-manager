@@ -151,6 +151,7 @@ impl TestApp {
 
     pub async fn receive_event(&self) -> Result<Event> {
         let msg = self.consumer.recv().await?;
+        tracing::info!("EVENT RECEIVED");
         let topic = msg.topic();
         let payload = msg.payload().ok_or(anyhow!("Missing payload"))?;
         let event = if topic.starts_with("allocations") {
