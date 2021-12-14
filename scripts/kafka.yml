@@ -19,7 +19,8 @@ services:
     ports:
     - 9094:9094
     depends_on:
-    - zookeeper
+      zookeeper:
+        condition: service_healthy
 
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
