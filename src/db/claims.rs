@@ -56,13 +56,47 @@ pub async fn delete_claim_by_id<T: GenericClient>(client: &T, id: Uuid) -> Resul
     Ok(())
 }
 
+#[tracing::instrument(skip(client, strategy, sub_strategy, ticker))]
+pub async fn delete_claims_by_strategy_and_ticker<T: GenericClient>(
+    client: &T,
+    strategy: &str,
+    sub_strategy: Option<&str>,
+    ticker: &str,
+) -> Result<(), Error> {
+    trace!(
+        strategy,
+        ?sub_strategy,
+        ticker,
+        "Deleting claims for strategy and ticker"
+    );
+    match sub_strategy {
+        Some(sub_strategy) => {
+            client
+                .execute(
+                    "DELETE FROM claims WHERE strategy = $1 AND sub_strategy = $2 AND ticker = $3",
+                    &[&strategy, &sub_strategy, &ticker],
+                )
+                .await?
+        }
+        None => {
+            client
+                .execute(
+                    "DELETE FROM claims WHERE strategy = $1 AND ticker = $2",
+                    &[&strategy, &ticker],
+                )
+                .await?
+        }
+    };
+    Ok(())
+}
+
 #[tracing::instrument(skip(client, claim))]
 pub async fn upsert_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result<(), Error> {
     trace!(id = %claim.id, "Saving claim");
     let (amount, unit) = split_amount_spec(&claim.amount);
     client
         .execute(
-            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit, limit_price) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (strategy, COALESCE(sub_strategy, ' '), ticker) WHERE sub_strategy IS NOT NULL DO UPDATE SET id = EXCLUDED.id, amount = EXCLUDED.amount, unit = EXCLUDED.unit, limit_price = EXCLUDED.limit_price;",
+            "INSERT INTO claims (id, strategy, sub_strategy, ticker, amount, unit, limit_price, before) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (strategy, COALESCE(sub_strategy, ' '), ticker) WHERE sub_strategy IS NOT NULL DO UPDATE SET id = EXCLUDED.id, amount = EXCLUDED.amount, unit = EXCLUDED.unit, limit_price = EXCLUDED.limit_price, before = EXCLUDED.before;",
             &[
                 &claim.id,
                 &claim.strategy,
@@ -70,7 +104,8 @@ pub async fn upsert_claim<T: GenericClient>(client: &T, claim: &Claim) -> Result
                 &claim.ticker,
                 &amount,
                 &unit,
-                &claim.limit_price
+                &claim.limit_price,
+                &claim.before
             ],
         )
         .await?;

@@ -11,23 +11,21 @@ use trading_base::Amount;
 impl OrderManager {
     #[tracing::instrument(skip(self))]
     pub async fn reconcile(&self) -> Result<()> {
-        self.cancel_old_pending_trades().await?;
+        debug!("Running reconciliation checks");
+        self.cancel_old_unreported_trades().await?;
         self.reconcile_claims().await?;
         self.reconcile_house_positions().await
     }
 
     #[tracing::instrument(skip(self))]
-    async fn cancel_old_pending_trades(&self) -> Result<()> {
-        let pending_trades = db::get_pending_trades(self.db_client.as_ref()).await?;
-        for trade in pending_trades {
+    async fn cancel_old_unreported_trades(&self) -> Result<()> {
+        let trades = db::get_trades(self.db_client.as_ref()).await?;
+        for trade in trades {
             if (Utc::now() - trade.datetime) > Duration::seconds(self.settings.unreported_trade_expiry_seconds as i64)
                 && trade.status == Status::Unreported
             {
                 warn!(id = %trade.id, "Deleting unreported trade");
-                db::delete_pending_trade_by_id(self.db_client.as_ref(), trade.id).await?;
-                if let Some(claim_id) = trade.claim_id {
-                    db::delete_claim_by_id(self.db_client.as_ref(), claim_id).await?;
-                }
+                db::delete_trade_by_id(self.db_client.as_ref(), trade.id).await?;
             }
         }
         Ok(())
@@ -38,13 +36,28 @@ impl OrderManager {
         let claims = db::get_claims(self.db_client.as_ref()).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
         for claim in claims {
-            let pending_trade_amount =
-                db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker).await?;
+            if let Some(before) = claim.before {
+                if before < Utc::now() {
+                    db::delete_claim_by_id(self.db_client.as_ref(), claim.id).await?;
+                    let active_trades = db::get_trades_by_ticker(self.db_client.as_ref(), &claim.ticker)
+                        .await?
+                        .into_iter()
+                        .filter(|trade| trade.is_active());
+                    for trade in active_trades {
+                        if let Some(broker_id) = trade.broker_id {
+                            self.cancel_trade(broker_id).await?;
+                        }
+                    }
+                    continue;
+                }
+            }
+            let active_trade_amount =
+                db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker).await?;
 
-            if pending_trade_amount.is_zero() {
+            if active_trade_amount.is_zero() {
                 debug!("Unfilled claim, sending new trade");
                 let maybe_trade = self
-                    .generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None, Some(claim.id))
+                    .generate_trades(&claim.ticker, &claim.amount, claim.limit_price, None)
                     .await?;
                 if let Some(trade_intent) = maybe_trade {
                     self.event_sender.send(Event::RiskCheckRequest(trade_intent)).await?
@@ -59,22 +72,23 @@ impl OrderManager {
         let house_positions = db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
         let house_positions = house_positions.iter().filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
-            if position.shares.abs() > Decimal::from_f64(0.99).unwrap() {
-                debug!(ticker = %position.ticker, shares = %position.shares, "Reducing size of house position");
-                let mut shares_to_liquidate = (position.shares.abs() - Decimal::from_f64(0.99).unwrap())
-                    .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
-                shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
-                let maybe_trade = self
-                    .generate_trades(
-                        &position.ticker,
-                        &Amount::Shares(-shares_to_liquidate),
-                        None,
-                        None,
-                        None,
-                    )
-                    .await?;
-                if let Some(intent) = maybe_trade {
-                    self.event_sender.send(Event::RiskCheckRequest(intent)).await?
+            if position.shares.abs() >= Decimal::ONE {
+                let active_trade_amount =
+                    db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), &position.ticker).await?;
+                if active_trade_amount.is_zero() {
+                    debug!(ticker = %position.ticker, shares = %position.shares, "Reducing size of house position");
+
+                    // Since shares are stored with 8 decimal points of precision, adding 1e-9
+                    // guarantees that we will be left with < 1 share in the house position.
+                    let mut shares_to_liquidate = (position.shares.abs() - Decimal::ONE + Decimal::new(1, 9))
+                        .round_dp_with_strategy(0, RoundingStrategy::AwayFromZero);
+                    shares_to_liquidate.set_sign_positive(position.shares.is_sign_positive());
+                    let maybe_trade = self
+                        .generate_trades(&position.ticker, &Amount::Shares(-shares_to_liquidate), None, None)
+                        .await?;
+                    if let Some(intent) = maybe_trade {
+                        self.event_sender.send(Event::RiskCheckRequest(intent)).await?
+                    }
                 }
             }
         }

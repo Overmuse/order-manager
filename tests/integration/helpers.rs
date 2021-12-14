@@ -19,7 +19,7 @@ use tokio_postgres::{connect, Client, NoTls};
 use tracing::subscriber::set_global_default;
 use tracing::{debug, error};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
-use trading_base::{Identifier, PositionIntent, TradeIntent};
+use trading_base::{Identifier, PositionIntent, TradeIntent, TradeMessage};
 use uuid::Uuid;
 
 static TRACING: Lazy<()> = Lazy::new(|| {
@@ -168,7 +168,7 @@ impl TestApp {
             Event::RiskCheckRequest(intent)
         } else if topic.starts_with("trade-intents") {
             let intent: TradeIntent = serde_json::from_slice(payload)?;
-            Event::TradeIntent(intent)
+            Event::TradeMessage(TradeMessage::New { intent })
         } else {
             unreachable!()
         };
@@ -178,8 +178,8 @@ impl TestApp {
     pub async fn _receive_claim_and_trade_intent(&self) -> Result<(Claim, TradeIntent)> {
         let events = tokio::try_join!(self.receive_event(), self.receive_event())?;
         match events {
-            (Event::Claim(c), Event::TradeIntent(ti)) => Ok((c, ti)),
-            (Event::TradeIntent(ti), Event::Claim(c)) => Ok((c, ti)),
+            (Event::Claim(c), Event::TradeMessage(TradeMessage::New { intent })) => Ok((c, intent)),
+            (Event::TradeMessage(TradeMessage::New { intent }), Event::Claim(c)) => Ok((c, intent)),
             _ => {
                 error!("UH OH");
                 return Err(anyhow!("Unexpected events"));
@@ -257,6 +257,7 @@ pub async fn spawn_app() -> TestApp {
     std::env::set_var("APP__TOPICS__TRADE", format!("trade-intents-{}", test_id));
     std::env::set_var("DATABASE__NAME", database_name);
     std::env::set_var("DATABASE__URL", database_address);
+    std::env::set_var("DATASTORE__BASE_URL", "http://localhost:9010");
     std::env::set_var("REDIS__URL", "redis://localhost:6379");
     std::env::set_var("KAFKA__BOOTSTRAP_SERVER", "localhost:9094");
     std::env::set_var("KAFKA__GROUP_ID", Uuid::new_v4().to_string());
@@ -265,6 +266,8 @@ pub async fn spawn_app() -> TestApp {
     std::env::set_var("KAFKA__SECURITY_PROTOCOL", "PLAINTEXT");
     std::env::set_var("KAFKA__ACKS", "0");
     std::env::set_var("KAFKA__RETRIES", "0");
+    std::env::set_var("SENTRY__DSN", "");
+    std::env::set_var("SENTRY__ENVIRONMENT", "test");
     std::env::set_var("WEBSERVER__PORT", "0");
     let settings = Settings::new().unwrap();
     debug!("Configuring database");

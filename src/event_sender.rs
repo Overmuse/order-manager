@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{error, info};
-use trading_base::TradeIntent;
+use trading_base::{TradeIntent, TradeMessage};
 
 struct EventSender {
     settings: AppSettings,
@@ -17,7 +17,7 @@ struct EventSender {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum Event {
-    TradeIntent(TradeIntent),
+    TradeMessage(TradeMessage),
     Allocation(Allocation),
     Claim(Claim),
     Lot(Lot),
@@ -44,14 +44,17 @@ impl EventSender {
             }
             let payload = payload.unwrap();
             let (topic, key) = match event {
-                Event::TradeIntent(ti) => (self.settings.topics.trade.as_str(), ti.ticker),
-                Event::Allocation(alloc) => (self.settings.topics.allocation.as_str(), alloc.ticker),
-                Event::Claim(claim) => (self.settings.topics.claim.as_str(), claim.ticker),
-                Event::Lot(lot) => (self.settings.topics.lot.as_str(), lot.ticker),
-                Event::RiskCheckRequest(ti) => (self.settings.topics.risk.as_str(), ti.ticker),
+                Event::TradeMessage(ref tm) => match tm {
+                    TradeMessage::New { intent } => ("trade-intents", intent.ticker.as_str()),
+                    TradeMessage::Cancel { .. } => ("trade-intents", ""),
+                },
+                Event::Allocation(ref alloc) => ("allocations", alloc.ticker.as_str()),
+                Event::Claim(ref claim) => ("claims", claim.ticker.as_str()),
+                Event::Lot(ref lot) => ("lots", lot.ticker.as_str()),
+                Event::RiskCheckRequest(ref intent) => ("risk-check-request", intent.ticker.as_str()),
             };
-            let record = FutureRecord::to(topic).key(&key).payload(&payload);
-            let send = self.producer.send(record, Duration::from_secs(0)).await;
+            let record = FutureRecord::to(topic).key(key).payload(&payload);
+            let send = self.producer.send(record, Duration::ZERO).await;
             if let Err((e, m)) = send {
                 error!("Error: {:?}\nMessage: {:?}", e, m)
             }

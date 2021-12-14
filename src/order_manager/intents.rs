@@ -1,14 +1,13 @@
 use super::OrderManager;
 use crate::db;
 use crate::event_sender::Event;
-use crate::types::{calculate_claim_amount, Claim, Owner, Position};
+use crate::types::{calculate_claim_amount, Claim, Owner, Position, Trade};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use num_traits::Signed;
 use rust_decimal::prelude::*;
 use tracing::{debug, trace, warn};
 use trading_base::{Amount, Identifier, OrderType, PositionIntent, TradeIntent, UpdatePolicy};
-use uuid::Uuid;
 
 pub(crate) trait PositionIntentExt {
     fn is_expired(&self) -> bool;
@@ -94,41 +93,56 @@ impl OrderManager {
         if !should_position_be_updated(intent, strategy_shares) {
             return Ok(None);
         }
-        let maybe_price = self.redis.get_latest_price(ticker).await?.or(intent.limit_price);
+        if let Amount::Zero = intent.amount {
+            // If there's no active trades for ticker, cancel any claim for this strategy and ticker
+            let active_amount = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
+            if active_amount.is_zero() {
+                debug!("Cancelling claim that is no longer active");
+                db::delete_claims_by_strategy_and_ticker(
+                    self.db_client.as_ref(),
+                    &intent.strategy,
+                    intent.sub_strategy.as_deref(),
+                    ticker,
+                )
+                .await?;
+            }
+        }
+        let maybe_price = get_last_price(&self.datastore_url, ticker)
+            .await
+            .ok()
+            .or(intent.limit_price);
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
         match diff_amount {
             Some(amount) if !amount.is_zero() => {
-                let pending_trades = db::get_pending_trades_by_ticker(self.db_client.as_ref(), ticker).await?;
-                if !pending_trades.is_empty() {
+                let active_trades: Vec<_> = db::get_trades_by_ticker(self.db_client.as_ref(), ticker)
+                    .await?
+                    .into_iter()
+                    .filter(Trade::is_active)
+                    .collect();
+                if !active_trades.is_empty() {
                     let maybe_trade = self
-                        .generate_trades(ticker, &amount, intent.limit_price, intent.stop_price, None)
+                        .generate_trades(ticker, &amount, intent.limit_price, intent.stop_price)
                         .await?;
                     if let Some(trade) = maybe_trade {
-                        let id = pending_trades.first().expect("Guaranteed to be non-empty").id;
+                        let id = active_trades.first().expect("Guaranteed to be non-empty").id;
                         db::save_dependent_trade(self.db_client.as_ref(), id, &trade).await?
                     }
                     return Ok(None);
                 }
-                let mut claim = Claim::new(
+                let claim = Claim::new(
                     intent.strategy.clone(),
                     intent.sub_strategy.clone(),
                     ticker.to_string(),
                     amount,
                     intent.limit_price,
+                    intent.before,
                 );
-                self.net_claim(&mut claim).await?;
                 db::upsert_claim(self.db_client.as_ref(), &claim)
                     .await
                     .context("Failed to upsert claim")?;
                 self.event_sender.send(Event::Claim(claim.clone())).await?;
-                self.generate_trades(
-                    ticker,
-                    &claim.amount,
-                    intent.limit_price,
-                    intent.stop_price,
-                    Some(claim.id),
-                )
-                .await
+                self.generate_trades(ticker, &claim.amount, intent.limit_price, intent.stop_price)
+                    .await
             }
             _ => {
                 trace!("No trade generated");
@@ -144,21 +158,18 @@ impl OrderManager {
         amount: &Amount,
         limit_price: Option<Decimal>,
         stop_price: Option<Decimal>,
-        claim_id: Option<Uuid>,
     ) -> Result<Option<TradeIntent>> {
         let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
         let diff_shares = match amount {
             Amount::Shares(shares) => *shares,
             Amount::Dollars(dollars) => {
-                let price = self
-                    .redis
-                    .get::<Option<f64>>(&format!("price/{}", ticker))
-                    .await?
-                    .map(Decimal::from_f64)
-                    .flatten()
-                    .or(limit_price);
+                let price = get_last_price(&self.datastore_url, ticker)
+                    .await
+                    .map(Some)
+                    .unwrap_or(limit_price);
+                debug!(?price);
                 match price {
-                    Some(price) => dollars / price,
+                    Some(price) => (dollars / price).round_dp(8),
                     None => {
                         warn!("Missing price");
                         return Ok(None);
@@ -167,16 +178,16 @@ impl OrderManager {
             }
             _ => unreachable!(),
         };
-        let pending_shares: Decimal = db::get_pending_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
             .await
-            .context("Failed to get pending trade amount")?
+            .context("Failed to get active trade amount")?
             .into();
         let owned_shares: Decimal = positions.iter().map(|pos| pos.shares).sum();
 
         let (sent, maybe_saved) = make_trades(
             ticker,
             diff_shares,
-            owned_shares + pending_shares,
+            owned_shares + active_shares,
             limit_price,
             stop_price,
         )?;
@@ -229,8 +240,27 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self, position), fields(position.ticker))]
     pub async fn close_position(&self, position: Position) -> Result<()> {
-        let trade_intent = make_trade_intent(&position.ticker, -position.shares, None, None)?;
-        let mut claim_id = None;
+        let ticker = &position.ticker;
+        let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
+        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+            .await
+            .context("Failed to get active trade amount")?
+            .into();
+        let owned_shares: Decimal = positions.iter().map(|pos| pos.shares).sum();
+        let (sent, maybe_saved) = make_trades(
+            &position.ticker,
+            -position.shares,
+            owned_shares + active_shares,
+            None,
+            None,
+        )?;
+        if let Some(saved) = maybe_saved {
+            debug!("Saving dependent trade");
+            db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
+                .await
+                .context("Failed to save dependent trade")?;
+        }
+
         if let Owner::Strategy(strategy, sub_strategy) = position.owner {
             let claim = Claim::new(
                 strategy,
@@ -238,22 +268,14 @@ impl OrderManager {
                 position.ticker.clone(),
                 Amount::Shares(-position.shares),
                 None,
+                None,
             );
             db::upsert_claim(self.db_client.as_ref(), &claim)
                 .await
                 .context("Failed to save claim")?;
-            claim_id = Some(claim.id);
             self.event_sender.send(Event::Claim(claim)).await?;
         };
-        self.send_trade(trade_intent, claim_id).await
-    }
-
-    async fn net_claim(&self, claim: &mut Claim) -> Result<()> {
-        let _maybe_house_position =
-            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), "House", None, &claim.ticker).await?;
-        // TODO: Actually net the claim
-
-        Ok(())
+        self.send_trade(sent).await
     }
 }
 
@@ -328,6 +350,12 @@ fn make_trade_intent(
     )
     .order_type(order_type);
     Ok(intent)
+}
+
+async fn get_last_price(base_url: &str, ticker: &str) -> Result<Decimal> {
+    let url = format!("{}/last/{}", base_url, ticker);
+    let price: Decimal = reqwest::get(url).await?.json().await?;
+    Ok(price)
 }
 
 #[cfg(test)]

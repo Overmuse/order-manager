@@ -24,8 +24,14 @@ pub struct DatabaseSettings {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RedisSettings {
-    pub url: String,
+pub struct SentrySettings {
+    pub environment: String,
+    pub dsn: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DatastoreSettings {
+    pub base_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,7 +44,8 @@ pub struct Settings {
     pub app: AppSettings,
     pub database: DatabaseSettings,
     pub kafka: KafkaSettings,
-    pub redis: RedisSettings,
+    pub datastore: DatastoreSettings,
+    pub sentry: SentrySettings,
     pub webserver: WebServerSettings,
 }
 

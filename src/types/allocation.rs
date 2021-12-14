@@ -102,7 +102,7 @@ pub fn split_lot(claims: &[Claim], lot: &Lot) -> Vec<Allocation> {
                 if dollars.is_sign_negative() {
                     allocated_dollars.set_sign_negative(true)
                 }
-                (allocated_dollars, allocated_dollars / lot.price)
+                (allocated_dollars, (allocated_dollars / lot.price).round_dp(8))
             }
             Amount::Shares(shares) => {
                 let mut allocated_shares = shares.abs().min(remaining_shares.abs());
@@ -153,9 +153,23 @@ mod test {
             Decimal::new(10, 0),
         );
 
-        let zero_claim1 = Claim::new("A".into(), None, "AAPL".into(), Amount::Shares(Decimal::ZERO), None);
-        let zero_claim2 = Claim::new("A".into(), None, "AAPL".into(), Amount::Dollars(Decimal::ZERO), None);
-        let zero_claim3 = Claim::new("A".into(), None, "AAPL".into(), Amount::Zero, None);
+        let zero_claim1 = Claim::new(
+            "A".into(),
+            None,
+            "AAPL".into(),
+            Amount::Shares(Decimal::ZERO),
+            None,
+            None,
+        );
+        let zero_claim2 = Claim::new(
+            "A".into(),
+            None,
+            "AAPL".into(),
+            Amount::Dollars(Decimal::ZERO),
+            None,
+            None,
+        );
+        let zero_claim3 = Claim::new("A".into(), None, "AAPL".into(), Amount::Zero, None, None);
 
         assert!(!should_allocate(&lot, &zero_claim1));
         assert!(!should_allocate(&lot, &zero_claim2));
@@ -167,16 +181,31 @@ mod test {
             "AAPL".into(),
             Amount::Shares(Decimal::ONE),
             Some(Decimal::TEN),
+            None,
         );
         assert!(!should_allocate(&lot, &limit_claim));
 
-        let wrong_sign_claim = Claim::new("A".into(), None, "AAPL".into(), Amount::Shares(-Decimal::ONE), None);
+        let wrong_sign_claim = Claim::new(
+            "A".into(),
+            None,
+            "AAPL".into(),
+            Amount::Shares(-Decimal::ONE),
+            None,
+            None,
+        );
         assert!(!should_allocate(&lot, &wrong_sign_claim));
 
-        let wrong_ticker_claim = Claim::new("A".into(), None, "AAP".into(), Amount::Shares(Decimal::ONE), None);
+        let wrong_ticker_claim = Claim::new("A".into(), None, "AAP".into(), Amount::Shares(Decimal::ONE), None, None);
         assert!(!should_allocate(&lot, &wrong_ticker_claim));
 
-        let okay_claim = Claim::new("A".into(), None, "AAPL".into(), Amount::Shares(Decimal::ONE), None);
+        let okay_claim = Claim::new(
+            "A".into(),
+            None,
+            "AAPL".into(),
+            Amount::Shares(Decimal::ONE),
+            None,
+            None,
+        );
         assert!(should_allocate(&lot, &okay_claim));
     }
 
@@ -196,6 +225,7 @@ mod test {
                 "AAPL".into(),
                 Amount::Dollars(Decimal::new(-400, 0)),
                 None,
+                None,
             ),
             Claim::new(
                 "B".into(),
@@ -203,12 +233,14 @@ mod test {
                 "AAPL".into(),
                 Amount::Dollars(Decimal::new(400, 0)),
                 None,
+                None,
             ),
             Claim::new(
                 "C".into(),
                 Some("B2".into()),
                 "AAPL".into(),
                 Amount::Shares(Decimal::new(25, 1)),
+                None,
                 None,
             ),
         ];
