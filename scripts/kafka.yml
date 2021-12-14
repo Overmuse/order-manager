@@ -1,6 +1,12 @@
 version: "2.1"
 
 services:
+  autohealer:
+    image: willfarrell/autoheal
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
   zookeeper:
     image: confluentinc/cp-zookeeper:7.0.0
     ports:
@@ -9,6 +15,8 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
       ZOOKEEPER_SYNC_LIMIT: 2
+    labels:
+      autoheal: true
     healthcheck:
       test: echo stat | nc localhost 2181
       interval: 10s
@@ -21,6 +29,8 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
+    labels:
+      autoheal: true
     healthcheck:
       test:
         ["CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181"]
