@@ -14,13 +14,9 @@ config = "0.11"
 dotenv = "0.15"
 futures = "0.3"
 kafka-settings = {git = "ssh://git@github.com/Overmuse/kafka-settings.git", tag = "v0.3.1" }
-mobc = "0.7.3"
-mobc-redis = "0.7.0"
 num-traits = "0.2"
-polygon = { git = "ssh://git@github.com/Overmuse/polygon", tag = "v0.11.0" }
 postgres-types = { version = "0.2.2", features = ["derive"] }
 rdkafka = { version = "0.26", features = ["ssl-vendored"] }
-redis = { version = "0.19.0", features = ["aio", "tokio-comp"] }
 refinery = { version = "0.6", features = ["tokio-postgres"] }
 reqwest = "0.11.4"
 risk-manager = {git = "ssh://git@github.com/Overmuse/risk-manager.git", tag = "v0.4.1" }

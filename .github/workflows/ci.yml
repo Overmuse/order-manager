@@ -115,8 +115,6 @@ jobs:
         run: ./scripts/init_kafka.sh
       - name: Initiate postgres
         run: ./scripts/init_db.sh
-      - name: Initiate redis
-        run: ./scripts/init_redis.sh
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin --version 0.18.0-alpha3
       - name: Generate coverage
