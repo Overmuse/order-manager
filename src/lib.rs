@@ -24,7 +24,7 @@ pub async fn run(settings: Settings) -> Result<()> {
     let producer = producer(&settings.kafka).context("Failed to create kafka producer")?;
     let (scheduled_intents_tx1, scheduled_intents_rx1) = unbounded_channel();
     let (scheduled_intents_tx2, scheduled_intents_rx2) = unbounded_channel();
-    let event_sender_handle = EventSenderHandle::new(settings.app.clone(), producer);
+    let event_sender_handle = EventSenderHandle::new(producer);
     let intent_scheduler = IntentScheduler::new(scheduled_intents_tx1, scheduled_intents_rx2);
     let (client, connection) =
         connect(&format!("{}/{}", settings.database.url, settings.database.name,), NoTls).await?;
