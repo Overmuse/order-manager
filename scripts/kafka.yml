@@ -19,7 +19,8 @@ services:
     ports:
     - 9094:9094
     depends_on:
-    - zookeeper
+      zookeeper:
+        condition: service_healthy
     healthcheck:
       test:
         ["CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181"]
