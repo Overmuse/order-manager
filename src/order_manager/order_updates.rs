@@ -131,37 +131,3 @@ fn calculate_claim_adjustment_amount(claim_amount: &Amount, allocation: &Allocat
         _ => unimplemented!(),
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    const ORDER_ID: Uuid = Uuid::nil();
-
-    fn lot(shares: Decimal, price: Decimal) -> Lot {
-        Lot::new(ORDER_ID, "TICK".to_string(), Utc::now(), price, shares)
-    }
-
-    #[test]
-    fn test_lot_aggregation() {
-        let previous_lots = [
-            lot(Decimal::ONE, Decimal::new(111, 0)),
-            lot(Decimal::TWO, Decimal::new(101, 0)),
-            lot(Decimal::TEN, Decimal::new(100, 0)),
-        ];
-        let (qty, price) = aggregate_previous_lots(&previous_lots);
-        assert_eq!(qty, Decimal::new(13, 0));
-        assert_eq!(price, Decimal::new(101, 0));
-    }
-
-    #[test]
-    fn test_lot_calculation() {
-        let (q, p) = calculate_lot_quantity_and_price(Decimal::ZERO, Decimal::ONE, Decimal::TWO, Decimal::ONE_HUNDRED);
-        assert_eq!(q, Decimal::TWO);
-        assert_eq!(p, Decimal::ONE_HUNDRED);
-
-        let (q2, p2) = calculate_lot_quantity_and_price(q, p, Decimal::TEN, Decimal::ONE_THOUSAND);
-        assert_eq!(q2, Decimal::new(8, 0));
-        assert_eq!(p2, Decimal::new(1225, 0));
-    }
-}
