@@ -4,7 +4,6 @@ use crate::event_sender::Event;
 use crate::types::{split_lot, Allocation, Lot};
 use alpaca::{Event as AlpacaEvent, OrderEvent, Side};
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use rust_decimal::prelude::*;
 use tracing::debug;
 use trading_base::Amount;
@@ -36,10 +35,7 @@ impl OrderManager {
                     Side::Sell => -Decimal::from_isize(qty).unwrap(),
                 };
                 db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
-                let new_lot = self
-                    .make_lot(id, &ticker, timestamp, price, qty)
-                    .await
-                    .context("Failed to make lot")?;
+                let new_lot = Lot::new(id, ticker.to_string(), timestamp, price, qty);
                 debug!("Saving lot");
                 db::save_lot(self.db_client.as_ref(), &new_lot)
                     .await
@@ -60,10 +56,7 @@ impl OrderManager {
                     Side::Sell => -Decimal::from_isize(qty).unwrap(),
                 };
                 db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
-                let new_lot = self
-                    .make_lot(id, &ticker, timestamp, price, qty)
-                    .await
-                    .context("Failed to make lot")?;
+                let new_lot = Lot::new(id, ticker.to_string(), timestamp, price, qty);
                 db::save_lot(self.db_client.as_ref(), &new_lot)
                     .await
                     .context("Failed to make lot")?;
@@ -73,18 +66,6 @@ impl OrderManager {
             _ => (),
         }
         Ok(())
-    }
-
-    #[tracing::instrument(skip(self, ticker, timestamp, price, quantity))]
-    async fn make_lot(
-        &self,
-        id: Uuid,
-        ticker: &str,
-        timestamp: DateTime<Utc>,
-        price: Decimal,
-        quantity: Decimal,
-    ) -> Result<Lot> {
-        Ok(Lot::new(id, ticker.to_string(), timestamp, price, quantity))
     }
 
     #[tracing::instrument(skip(self, lot))]

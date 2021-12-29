@@ -206,26 +206,17 @@ impl OrderManager {
         trace!("Evaluating multi-ticker intent");
         if let Amount::Zero = intent.amount {
             let owner = Owner::Strategy(intent.strategy, intent.sub_strategy);
-            let positions_to_close = match intent.update_policy {
+            let mut positions_to_close = db::get_positions_by_owner(self.db_client.as_ref(), &owner)
+                .await
+                .context("Failed to get positions")?;
+            match intent.update_policy {
                 UpdatePolicy::Retain => {
                     debug!("UpdatePolicy::Retain: No trading needed");
-                    return Ok(());
+                    positions_to_close.clear();
                 }
-                UpdatePolicy::RetainLong => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
-                    .await
-                    .context("Failed to get positions")?
-                    .into_iter()
-                    .filter(|pos| pos.is_short())
-                    .collect(),
-                UpdatePolicy::RetainShort => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
-                    .await
-                    .context("Failed to get position")?
-                    .into_iter()
-                    .filter(|pos| pos.is_long())
-                    .collect(),
-                UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
-                    .await
-                    .context("Failed to get positions")?,
+                UpdatePolicy::RetainLong => positions_to_close.retain(|pos| pos.is_short()),
+                UpdatePolicy::RetainShort => positions_to_close.retain(|pos| pos.is_long()),
+                UpdatePolicy::Update => (),
             };
             for position in positions_to_close {
                 self.close_position(position)
