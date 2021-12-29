@@ -46,6 +46,7 @@ impl OrderManager {
                 db::save_lot(&transaction, &new_lot)
                     .await
                     .context("Failed to save lot")?;
+                transaction.commit().await?;
                 self.event_sender.send(Event::Lot(new_lot.clone())).await?;
                 debug!("Assigning lot");
                 self.assign_lot(new_lot).await.context("Failed to assign lot")?;

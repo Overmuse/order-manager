@@ -95,17 +95,20 @@ impl OrderManager {
         }
         if let Amount::Zero = intent.amount {
             // If there's no active trades for ticker, cancel any claim for this strategy and ticker
-            let active_amount = db::get_active_trade_amount_by_ticker(&*self.db_client.read().await, ticker).await?;
+            let mut write_lock = self.db_client.write().await;
+            let transaction = write_lock.transaction().await?;
+            let active_amount = db::get_active_trade_amount_by_ticker(&transaction, ticker).await?;
             if active_amount.is_zero() {
                 debug!("Cancelling claim that is no longer active");
                 db::delete_claims_by_strategy_and_ticker(
-                    &*self.db_client.read().await,
+                    &transaction,
                     &intent.strategy,
                     intent.sub_strategy.as_deref(),
                     ticker,
                 )
                 .await?;
             }
+            transaction.commit().await?;
         }
         let maybe_price = get_last_price(&self.datastore_url, ticker)
             .await
