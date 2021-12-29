@@ -7,7 +7,7 @@ use uuid::Uuid;
 impl OrderManager {
     #[tracing::instrument(skip(self, id))]
     pub async fn trigger_dependent_trades(&self, id: Uuid) -> Result<()> {
-        let trades = db::take_dependent_trades(self.db_client.as_ref(), id)
+        let trades = db::take_dependent_trades(&*self.db_client.read().await, id)
             .await
             .context("Failed to take and delete dependent trader")?;
         if !trades.is_empty() {

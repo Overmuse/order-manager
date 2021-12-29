@@ -19,13 +19,13 @@ impl OrderManager {
         debug!(status = ?event.event, "Order status update");
         match event.event {
             AlpacaEvent::New => {
-                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
+                db::save_trade(&*self.db_client.read().await, From::from(event.order)).await?;
             }
             AlpacaEvent::Canceled { .. } => {
-                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
+                db::save_trade(&*self.db_client.read().await, From::from(event.order)).await?;
             }
             AlpacaEvent::Expired { .. } | AlpacaEvent::Rejected { .. } => {
-                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
+                db::save_trade(&*self.db_client.read().await, From::from(event.order)).await?;
             }
             AlpacaEvent::Fill {
                 timestamp, qty, price, ..
@@ -35,13 +35,15 @@ impl OrderManager {
                     Side::Buy => Decimal::from_isize(qty).unwrap(),
                     Side::Sell => -Decimal::from_isize(qty).unwrap(),
                 };
-                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
+                let mut write_guard = self.db_client.write().await;
+                let transaction = write_guard.transaction().await?;
+                db::save_trade(&transaction, From::from(event.order)).await?;
                 let new_lot = self
                     .make_lot(id, &ticker, timestamp, price, qty)
                     .await
                     .context("Failed to make lot")?;
                 debug!("Saving lot");
-                db::save_lot(self.db_client.as_ref(), &new_lot)
+                db::save_lot(&transaction, &new_lot)
                     .await
                     .context("Failed to save lot")?;
                 self.event_sender.send(Event::Lot(new_lot.clone())).await?;
@@ -59,12 +61,12 @@ impl OrderManager {
                     Side::Buy => Decimal::from_isize(qty).unwrap(),
                     Side::Sell => -Decimal::from_isize(qty).unwrap(),
                 };
-                db::save_trade(self.db_client.as_ref(), From::from(event.order)).await?;
+                db::save_trade(&*self.db_client.read().await, From::from(event.order)).await?;
                 let new_lot = self
                     .make_lot(id, &ticker, timestamp, price, qty)
                     .await
                     .context("Failed to make lot")?;
-                db::save_lot(self.db_client.as_ref(), &new_lot)
+                db::save_lot(&*self.db_client.read().await, &new_lot)
                     .await
                     .context("Failed to make lot")?;
                 self.event_sender.send(Event::Lot(new_lot.clone())).await?;
@@ -89,13 +91,13 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self, lot))]
     async fn assign_lot(&self, lot: Lot) -> Result<()> {
-        let claims = db::get_claims_by_ticker(self.db_client.as_ref(), &lot.ticker)
+        let claims = db::get_claims_by_ticker(&*self.db_client.read().await, &lot.ticker)
             .await
             .context("Failed to get claim")?;
         let allocations = split_lot(&claims, &lot);
         for allocation in allocations {
             self.adjust_claim(&allocation).await.context("Failed to adjust claim")?;
-            db::save_allocation(self.db_client.as_ref(), &allocation)
+            db::save_allocation(&*self.db_client.read().await, &allocation)
                 .await
                 .context("Failed to save allocation")?;
             self.event_sender.send(Event::Allocation(allocation)).await?;
@@ -106,11 +108,11 @@ impl OrderManager {
     #[tracing::instrument(skip(self, allocation))]
     async fn adjust_claim(&self, allocation: &Allocation) -> Result<()> {
         if let Some(claim_id) = allocation.claim_id {
-            let claim = db::get_claim_by_id(self.db_client.as_ref(), claim_id)
+            let claim = db::get_claim_by_id(&*self.db_client.read().await, claim_id)
                 .await
                 .context("Failed to get claim")?;
             let amount = calculate_claim_adjustment_amount(&claim.amount, allocation);
-            db::update_claim_amount(self.db_client.as_ref(), claim_id, &amount)
+            db::update_claim_amount(&*self.db_client.read().await, claim_id, &amount)
                 .await
                 .context("Failed to update claim amount")?;
         };

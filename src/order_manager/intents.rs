@@ -43,7 +43,7 @@ impl OrderManager {
         } else if !intent.is_active() {
             // Not ready to transmit intent yet
             debug!("Sending intent to scheduler");
-            db::save_scheduled_intent(self.db_client.as_ref(), &intent)
+            db::save_scheduled_intent(&*self.db_client.read().await, &intent)
                 .await
                 .context("Failed to save scheduled intent")?;
             self.schedule_position_intent(intent)
@@ -75,7 +75,7 @@ impl OrderManager {
 
     async fn get_strategy_shares(&self, ticker: &str, strategy: &str, sub_strategy: Option<&str>) -> Result<Decimal> {
         let maybe_position =
-            db::get_position_by_owner_and_ticker(self.db_client.as_ref(), strategy, sub_strategy, ticker)
+            db::get_position_by_owner_and_ticker(&*self.db_client.read().await, strategy, sub_strategy, ticker)
                 .await
                 .context("Failed to get positions")?;
         Ok(maybe_position.as_ref().map(|x| x.shares).unwrap_or(Decimal::ZERO))
@@ -95,11 +95,11 @@ impl OrderManager {
         }
         if let Amount::Zero = intent.amount {
             // If there's no active trades for ticker, cancel any claim for this strategy and ticker
-            let active_amount = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker).await?;
+            let active_amount = db::get_active_trade_amount_by_ticker(&*self.db_client.read().await, ticker).await?;
             if active_amount.is_zero() {
                 debug!("Cancelling claim that is no longer active");
                 db::delete_claims_by_strategy_and_ticker(
-                    self.db_client.as_ref(),
+                    &*self.db_client.read().await,
                     &intent.strategy,
                     intent.sub_strategy.as_deref(),
                     ticker,
@@ -114,7 +114,7 @@ impl OrderManager {
         let diff_amount = calculate_claim_amount(&intent.amount, strategy_shares, maybe_price);
         match diff_amount {
             Some(amount) if !amount.is_zero() => {
-                let active_trades: Vec<_> = db::get_trades_by_ticker(self.db_client.as_ref(), ticker)
+                let active_trades: Vec<_> = db::get_trades_by_ticker(&*self.db_client.read().await, ticker)
                     .await?
                     .into_iter()
                     .filter(Trade::is_active)
@@ -125,7 +125,7 @@ impl OrderManager {
                         .await?;
                     if let Some(trade) = maybe_trade {
                         let id = active_trades.first().expect("Guaranteed to be non-empty").id;
-                        db::save_dependent_trade(self.db_client.as_ref(), id, &trade).await?
+                        db::save_dependent_trade(&*self.db_client.read().await, id, &trade).await?
                     }
                     return Ok(None);
                 }
@@ -137,7 +137,7 @@ impl OrderManager {
                     intent.limit_price,
                     intent.before,
                 );
-                db::upsert_claim(self.db_client.as_ref(), &claim)
+                db::upsert_claim(&*self.db_client.read().await, &claim)
                     .await
                     .context("Failed to upsert claim")?;
                 self.event_sender.send(Event::Claim(claim.clone())).await?;
@@ -159,7 +159,7 @@ impl OrderManager {
         limit_price: Option<Decimal>,
         stop_price: Option<Decimal>,
     ) -> Result<Option<TradeIntent>> {
-        let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
+        let positions = db::get_positions_by_ticker(&*self.db_client.read().await, ticker).await?;
         let diff_shares = match amount {
             Amount::Shares(shares) => *shares,
             Amount::Dollars(dollars) => {
@@ -178,7 +178,7 @@ impl OrderManager {
             }
             _ => unreachable!(),
         };
-        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(&*self.db_client.read().await, ticker)
             .await
             .context("Failed to get active trade amount")?
             .into();
@@ -193,7 +193,7 @@ impl OrderManager {
         )?;
         if let Some(saved) = maybe_saved {
             debug!("Saving dependent trade");
-            db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
+            db::save_dependent_trade(&*self.db_client.read().await, sent.id, &saved)
                 .await
                 .context("Failed to save dependent trade")?;
         }
@@ -211,19 +211,19 @@ impl OrderManager {
                     debug!("UpdatePolicy::Retain: No trading needed");
                     return Ok(());
                 }
-                UpdatePolicy::RetainLong => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
+                UpdatePolicy::RetainLong => db::get_positions_by_owner(&*self.db_client.read().await, &owner)
                     .await
                     .context("Failed to get positions")?
                     .into_iter()
                     .filter(|pos| pos.is_short())
                     .collect(),
-                UpdatePolicy::RetainShort => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
+                UpdatePolicy::RetainShort => db::get_positions_by_owner(&*self.db_client.read().await, &owner)
                     .await
                     .context("Failed to get position")?
                     .into_iter()
                     .filter(|pos| pos.is_long())
                     .collect(),
-                UpdatePolicy::Update => db::get_positions_by_owner(self.db_client.as_ref(), &owner)
+                UpdatePolicy::Update => db::get_positions_by_owner(&*self.db_client.read().await, &owner)
                     .await
                     .context("Failed to get positions")?,
             };
@@ -241,8 +241,8 @@ impl OrderManager {
     #[tracing::instrument(skip(self, position), fields(position.ticker))]
     pub async fn close_position(&self, position: Position) -> Result<()> {
         let ticker = &position.ticker;
-        let positions = db::get_positions_by_ticker(self.db_client.as_ref(), ticker).await?;
-        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), ticker)
+        let positions = db::get_positions_by_ticker(&*self.db_client.read().await, ticker).await?;
+        let active_shares: Decimal = db::get_active_trade_amount_by_ticker(&*self.db_client.read().await, ticker)
             .await
             .context("Failed to get active trade amount")?
             .into();
@@ -256,7 +256,7 @@ impl OrderManager {
         )?;
         if let Some(saved) = maybe_saved {
             debug!("Saving dependent trade");
-            db::save_dependent_trade(self.db_client.as_ref(), sent.id, &saved)
+            db::save_dependent_trade(&*self.db_client.read().await, sent.id, &saved)
                 .await
                 .context("Failed to save dependent trade")?;
         }
@@ -270,7 +270,7 @@ impl OrderManager {
                 None,
                 None,
             );
-            db::upsert_claim(self.db_client.as_ref(), &claim)
+            db::upsert_claim(&*self.db_client.read().await, &claim)
                 .await
                 .context("Failed to save claim")?;
             self.event_sender.send(Event::Claim(claim)).await?;

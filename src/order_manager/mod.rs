@@ -6,7 +6,10 @@ use crate::EventSenderHandle;
 use anyhow::{Context, Result};
 use rdkafka::consumer::StreamConsumer;
 use std::sync::Arc;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    RwLock,
+};
 use tokio_postgres::Client;
 use tracing::{debug, error, info};
 use trading_base::{PositionIntent, TradeIntent, TradeMessage};
@@ -24,7 +27,7 @@ pub struct OrderManager {
     scheduler_sender: UnboundedSender<PositionIntent>,
     scheduler_receiver: UnboundedReceiver<PositionIntent>,
     event_sender: EventSenderHandle,
-    db_client: Arc<Client>,
+    db_client: Arc<RwLock<Client>>,
     datastore_url: String,
     settings: AppSettings,
 }
@@ -35,7 +38,7 @@ impl OrderManager {
         scheduler_sender: UnboundedSender<PositionIntent>,
         scheduler_receiver: UnboundedReceiver<PositionIntent>,
         event_sender: EventSenderHandle,
-        db_client: Arc<Client>,
+        db_client: Arc<RwLock<Client>>,
         datastore_url: String,
         settings: AppSettings,
     ) -> Self {
@@ -66,7 +69,7 @@ impl OrderManager {
 
     async fn initalize(&self) -> Result<()> {
         debug!("Populating scheduled intents");
-        let scheduled_intents = db::get_scheduled_indents(self.db_client.as_ref())
+        let scheduled_intents = db::get_scheduled_indents(&*self.db_client.read().await)
             .await
             .context("Failed to get scheduled intents")?;
         for intent in scheduled_intents {
@@ -78,7 +81,7 @@ impl OrderManager {
 
     async fn send_trade(&self, intent: TradeIntent) -> Result<()> {
         db::save_trade(
-            self.db_client.as_ref(),
+            &*self.db_client.read().await,
             Trade::new(intent.id, intent.ticker.clone(), intent.qty as i32),
         )
         .await

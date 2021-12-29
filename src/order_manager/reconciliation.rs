@@ -19,13 +19,13 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self))]
     async fn cancel_old_unreported_trades(&self) -> Result<()> {
-        let trades = db::get_trades(self.db_client.as_ref()).await?;
+        let trades = db::get_trades(&*self.db_client.read().await).await?;
         for trade in trades {
             if (Utc::now() - trade.datetime) > Duration::seconds(self.settings.unreported_trade_expiry_seconds as i64)
                 && trade.status == Status::Unreported
             {
                 warn!(id = %trade.id, "Deleting unreported trade");
-                db::delete_trade_by_id(self.db_client.as_ref(), trade.id).await?;
+                db::delete_trade_by_id(&*self.db_client.read().await, trade.id).await?;
             }
         }
         Ok(())
@@ -33,13 +33,13 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self))]
     async fn reconcile_claims(&self) -> Result<()> {
-        let claims = db::get_claims(self.db_client.as_ref()).await?;
+        let claims = db::get_claims(&*self.db_client.read().await).await?;
         let claims = claims.iter().filter(|claim| !claim.amount.is_zero());
         for claim in claims {
             if let Some(before) = claim.before {
                 if before < Utc::now() {
-                    db::delete_claim_by_id(self.db_client.as_ref(), claim.id).await?;
-                    let active_trades = db::get_trades_by_ticker(self.db_client.as_ref(), &claim.ticker)
+                    db::delete_claim_by_id(&*self.db_client.read().await, claim.id).await?;
+                    let active_trades = db::get_trades_by_ticker(&*self.db_client.read().await, &claim.ticker)
                         .await?
                         .into_iter()
                         .filter(|trade| trade.is_active());
@@ -52,7 +52,7 @@ impl OrderManager {
                 }
             }
             let active_trade_amount =
-                db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), &claim.ticker).await?;
+                db::get_active_trade_amount_by_ticker(&*self.db_client.read().await, &claim.ticker).await?;
 
             if active_trade_amount.is_zero() {
                 debug!("Unfilled claim, sending new trade");
@@ -69,12 +69,12 @@ impl OrderManager {
 
     #[tracing::instrument(skip(self))]
     async fn reconcile_house_positions(&self) -> Result<()> {
-        let house_positions = db::get_positions_by_owner(self.db_client.as_ref(), &Owner::House).await?;
+        let house_positions = db::get_positions_by_owner(&*self.db_client.read().await, &Owner::House).await?;
         let house_positions = house_positions.iter().filter(|pos| pos.shares != Decimal::ZERO);
         for position in house_positions {
             if position.shares.abs() >= Decimal::ONE {
                 let active_trade_amount =
-                    db::get_active_trade_amount_by_ticker(self.db_client.as_ref(), &position.ticker).await?;
+                    db::get_active_trade_amount_by_ticker(&*self.db_client.read().await, &position.ticker).await?;
                 if active_trade_amount.is_zero() {
                     debug!(ticker = %position.ticker, shares = %position.shares, "Reducing size of house position");
 
